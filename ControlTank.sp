@@ -303,46 +303,6 @@ public Action Timer_SpawnAndTakeover(Handle timer, int userid)
     return Plugin_Stop;
 }
 
-public Action Timer_TakeoverTank(Handle timer, int userid)
-{
-    int client = GetClientOfUserId(userid);
-
-    if (!IsClientInGame(client))
-    {
-        g_iCurrentTank = -1;
-        return Plugin_Stop;
-    }
-
-    // 查找 Tank bot
-    int tankBot = FindTankBot();
-
-    if (tankBot <= 0)
-    {
-        PrintToServer("[寄寄之家-ControlTank] 错误：未找到 Tank bot");
-        PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01未找到 Tank bot");
-        g_iCurrentTank = -1;
-        return Plugin_Stop;
-    }
-
-    PrintToServer("[寄寄之家-ControlTank] 步骤4：找到 Tank bot: %d", tankBot);
-    PrintToServer("[寄寄之家-ControlTank] 玩家队伍: %d, 存活: %d", GetClientTeam(client), IsPlayerAlive(client));
-
-    // 传送到 Tank 位置
-    float vPos[3], vAng[3];
-    GetClientAbsOrigin(tankBot, vPos);
-    GetClientAbsAngles(tankBot, vAng);
-    TeleportEntity(client, vPos, vAng, NULL_VECTOR);
-
-    // 让玩家接管 Tank bot
-    PrintToServer("[寄寄之家-ControlTank] 步骤5：调用 L4D_TakeOverZombieBot(%d, %d)", client, tankBot);
-    L4D_TakeOverZombieBot(client, tankBot);
-
-    // 等待验证
-    CreateTimer(0.3, Timer_VerifyTakeover, userid, TIMER_FLAG_NO_MAPCHANGE);
-
-    return Plugin_Stop;
-}
-
 public Action Timer_TakeoverTank(Handle timer, DataPack data)
 {
     data.Reset();
