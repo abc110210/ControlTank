@@ -319,14 +319,15 @@ public Action Timer_TakeoverTank(Handle timer, DataPack data)
     {
         PrintToServer("[寄寄之家-ControlTank] 找到 Tank bot，开始接管流程...");
 
-        // 第一步：用 bot 替换玩家，让玩家离开幸存者队伍
-        L4D_ReplaceWithBot(client);
+    // 第一步：用 bot 替换玩家，让玩家离开幸存者队伍
+    L4D_ReplaceWithBot(client);
 
-        // 第二步：等待一小段时间后让玩家接管 Tank
-        DataPack takeoverData = new DataPack();
-        takeoverData.WriteCell(userid);
-        takeoverData.WriteCell(timeSeconds);
-        CreateTimer(0.5, Timer_TakeoverZombieBot, takeoverData, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
+    // 第二步：等待一小段时间后让玩家接管 Tank
+    DataPack takeoverData = new DataPack();
+    takeoverData.WriteCell(userid);
+    takeoverData.WriteCell(timeSeconds);
+    takeoverData.WriteCell(tankBot);  // 保存 Tank bot 的索引
+    CreateTimer(0.5, Timer_TakeoverZombieBot, takeoverData, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
     }
     else
     {
@@ -347,6 +348,7 @@ public Action Timer_TakeoverZombieBot(Handle timer, DataPack data)
     data.Reset();
     int userid = data.ReadCell();
     int timeSeconds = data.ReadCell();
+    int tankBot = data.ReadCell();
 
     int client = GetClientOfUserId(userid);
 
@@ -356,10 +358,29 @@ public Action Timer_TakeoverZombieBot(Handle timer, DataPack data)
         return Plugin_Stop;
     }
 
-    PrintToServer("[寄寄之家-ControlTank] 开始设置 Tank tickets...");
+    PrintToServer("[寄寄之家-ControlTank] Tank bot: %d, 客户端: %d", tankBot, client);
 
-    // 设置玩家的 Tank tickets（这会触发接管）
-    L4D2Direct_SetTankTickets(client, 10000);
+    // 检查 Tank bot 是否还存活
+    if (!IsClientInGame(tankBot) || !IsPlayerAlive(tankBot))
+    {
+        PrintToServer("[寄寄之家-ControlTank] 错误：Tank bot 已无效");
+        PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01转换失败，Tank bot 已无效");
+        g_iCurrentTank = -1;
+        return Plugin_Stop;
+    }
+
+    PrintToServer("[寄寄之家-ControlTank] 玩家队伍: %d, 玩家存活: %d", GetClientTeam(client), IsPlayerAlive(client));
+
+    // 先将玩家传送到 Tank 位置
+    float vPos[3], vAng[3];
+    GetClientAbsOrigin(tankBot, vPos);
+    GetClientAbsAngles(tankBot, vAng);
+    TeleportEntity(client, vPos, vAng, NULL_VECTOR);
+
+    PrintToServer("[寄寄之家-ControlTank] 调用 L4D_TakeOverZombieBot...");
+
+    // 直接让玩家接管 Tank bot
+    L4D_TakeOverZombieBot(client, tankBot);
 
     // 等待接管完成
     CreateTimer(0.5, Timer_VerifyTakeover, userid, TIMER_FLAG_NO_MAPCHANGE);
@@ -397,6 +418,7 @@ public Action Timer_RetryTakeover(Handle timer, DataPack data)
         DataPack takeoverData = new DataPack();
         takeoverData.WriteCell(userid);
         takeoverData.WriteCell(timeSeconds);
+        takeoverData.WriteCell(tankBot);  // 保存 Tank bot 索引
         CreateTimer(0.5, Timer_TakeoverZombieBot, takeoverData, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
     }
     else if (retryCount < 3)
