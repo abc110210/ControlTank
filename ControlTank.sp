@@ -18,6 +18,7 @@ public Plugin myinfo =
 ConVar g_cvarEnabled;
 ConVar g_cvarTankHP;
 bool g_bTankSpawning = false;
+bool g_bIsManualTest = false;
 int g_iCurrentTank = -1;
 
 public void OnPluginStart()
@@ -144,6 +145,10 @@ public void Event_TankSpawn(Event event, const char[] name, bool dontBroadcast)
         return;
 
     if (!IsCoopMode())
+        return;
+
+    // 如果是手动测试生成的Tank，不处理
+    if (g_bIsManualTest)
         return;
 
     if (g_bTankSpawning)
@@ -431,6 +436,9 @@ public Action Command_Test2(int client, int args)
     if (client == 0) return Plugin_Handled;
     if (!IsClientInGame(client)) return Plugin_Handled;
 
+    // 设置手动测试标志，防止tank_spawn事件触发主流程
+    g_bIsManualTest = true;
+
     ReplyToCommand(client, "[寄寄之家-ControlTank] ========== 接管AI Tank ==========");
 
     // 查找现有的AI Tank
@@ -493,12 +501,17 @@ public Action Timer_Test2_Takeover(Handle timer, DataPack data)
     vAng[0] = data.ReadFloat(); vAng[1] = data.ReadFloat(); vAng[2] = data.ReadFloat();
 
     int client = GetClientOfUserId(userid);
-    if (!IsClientInGame(client)) return Plugin_Stop;
+    if (!IsClientInGame(client))
+    {
+        g_bIsManualTest = false;
+        return Plugin_Stop;
+    }
 
     // 验证AI Tank仍然存在
     if (!IsClientInGame(tankBot) || !IsFakeClient(tankBot) || !IsPlayerAlive(tankBot))
     {
         ReplyToCommand(client, "[寄寄之家-ControlTank] ✗ AI Tank不再有效");
+        g_bIsManualTest = false;
         return Plugin_Stop;
     }
 
@@ -518,12 +531,17 @@ public Action Timer_Test2_TakeoverPhase2(Handle timer, DataPack data)
     int needSpawn = data.ReadCell();
 
     int client = GetClientOfUserId(userid);
-    if (!IsClientInGame(client)) return Plugin_Stop;
+    if (!IsClientInGame(client))
+    {
+        g_bIsManualTest = false;
+        return Plugin_Stop;
+    }
 
     // 再次验证AI Tank
     if (!IsClientInGame(tankBot) || !IsFakeClient(tankBot) || !IsPlayerAlive(tankBot))
     {
         ReplyToCommand(client, "[寄寄之家-ControlTank] ✗ AI Tank不再有效");
+        g_bIsManualTest = false;
         return Plugin_Stop;
     }
 
@@ -538,12 +556,20 @@ public Action Timer_Test2_TakeoverPhase2(Handle timer, DataPack data)
 public Action Timer_Test2_Finalize(Handle timer, int userid)
 {
     int client = GetClientOfUserId(userid);
-    if (!IsClientInGame(client)) return Plugin_Stop;
+    if (!IsClientInGame(client))
+    {
+        g_bIsManualTest = false;
+        return Plugin_Stop;
+    }
 
     // Tank血量已在生成时通过 z_tank_health 设置，无需手动设置
 
     PrintToServer("[寄寄之家-ControlTank] 转换完成，类别:%d 存活:%d", GetEntProp(client, Prop_Send, "m_zombieClass"), IsPlayerAlive(client));
     ReplyToCommand(client, "[寄寄之家-ControlTank] ✓ 转换完成！当前类别: %d, 存活: %d", GetEntProp(client, Prop_Send, "m_zombieClass"), IsPlayerAlive(client));
+
+    // 重置手动测试标志
+    g_bIsManualTest = false;
+
     return Plugin_Stop;
 }
 
