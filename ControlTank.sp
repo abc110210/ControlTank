@@ -274,18 +274,66 @@ void TransformPlayerToTank(int client)
 
     PrintToServer("[寄寄之家-ControlTank] 开始转换流程...");
 
-    // 步骤1：用 bot 替换玩家，让玩家进入观察者模式
-    PrintToServer("[寄寄之家-ControlTank] 步骤1：用 bot 替换玩家");
-    L4D_ReplaceWithBot(client);
+    // 保存玩家当前位置
+    float vPos[3], vAng[3];
+    GetClientAbsOrigin(client, vPos);
+    GetClientAbsAngles(client, vAng);
 
-    // 步骤2：等待后使用 z_spawn 生成 Tank
-    PrintToServer("[寄寄之家-ControlTank] 步骤2：准备生成 Tank");
+    // 步骤1：生成 AI Tank
+    PrintToServer("[寄寄之家-ControlTank] 步骤1：生成 AI Tank");
+    int tank = L4D2_SpawnTank(NULL_VECTOR, NULL_VECTOR);
 
-    // 创建 DataPack 传递数据
-    DataPack data = new DataPack();
-    data.WriteCell(GetClientUserId(client));
-    data.WriteCell(timeSeconds);
-    CreateTimer(0.3, Timer_SpawnAndTakeover, data, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
+    if (tank <= 0)
+    {
+        PrintToServer("[寄寄之家-ControlTank] 错误：生成 Tank 失败");
+        PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01生成 Tank 失败");
+        g_iCurrentTank = -1;
+        return;
+    }
+
+    PrintToServer("[寄寄之家-ControlTank] Tank 实体: %d", tank);
+
+    // 步骤2：等待 Tank 完全生成
+    CreateTimer(0.5, Timer_ReplaceTank, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+}
+
+public Action Timer_ReplaceTank(Handle timer, int userid)
+{
+    int client = GetClientOfUserId(userid);
+
+    if (!IsClientInGame(client))
+    {
+        g_iCurrentTank = -1;
+        return Plugin_Stop;
+    }
+
+    // 查找 Tank bot
+    int tankBot = FindTankBot();
+
+    if (tankBot <= 0)
+    {
+        PrintToServer("[寄寄之家-ControlTank] 错误：未找到 Tank bot");
+        PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01未找到 Tank bot");
+        g_iCurrentTank = -1;
+        return Plugin_Stop;
+    }
+
+    PrintToServer("[寄寄之家-ControlTank] 步骤2：找到 Tank bot: %d, 玩家: %d", tankBot, client);
+
+    // 传送到 Tank 位置
+    float vPos[3], vAng[3];
+    GetClientAbsOrigin(tankBot, vPos);
+    GetClientAbsAngles(tankBot, vAng);
+    TeleportEntity(client, vPos, vAng, NULL_VECTOR);
+
+    // 步骤3：使用 L4D_ReplaceTank 直接替换
+    PrintToServer("[寄寄之家-ControlTank] 步骤3：调用 L4D_ReplaceTank(%d, %d)", tankBot, client);
+    L4D_ReplaceTank(tankBot, client);
+
+    // 等待验证
+    CreateTimer(0.3, Timer_VerifyTakeover, userid, TIMER_FLAG_NO_MAPCHANGE);
+
+    return Plugin_Stop;
 }
 
 public Action Timer_SpawnAndTakeover(Handle timer, DataPack data)
@@ -687,16 +735,26 @@ public Action Command_TankSpawn(int client, int args)
 
     ReplyToCommand(client, "[寄寄之家-ControlTank] 正在生成 Tank...");
 
-    // 方法1：使用 left4dhooks 的 L4D2_SpawnTank
-    float playerPos[3];
-    GetClientAbsOrigin(client, playerPos);
-
-    int tank = L4D2_SpawnTank(playerPos, NULL_VECTOR);
+    // 使用 NULL_VECTOR 让游戏自动选择生成位置
+    int tank = L4D2_SpawnTank(NULL_VECTOR, NULL_VECTOR);
 
     ReplyToCommand(client, "[寄寄之家-ControlTank] L4D2_SpawnTank 返回: %d", tank);
 
+    if (tank > 0)
+    {
+        ReplyToCommand(client, "[寄寄之家-ControlTank] ✓ Tank 实体创建成功 (索引: %d)", tank);
+    }
+    else
+    {
+        ReplyToCommand(client, "[寄寄之家-ControlTank] ✗ Tank 实体创建失败");
+
+        // 尝试使用 z_spawn 作为备用方法
+        ReplyToCommand(client, "[寄寄之家-ControlTank] 尝试备用方法: z_spawn tank");
+        ServerCommand("z_spawn tank");
+    }
+
     // 等待后检查
-    CreateTimer(0.5, Timer_CheckTankSpawn, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+    CreateTimer(1.0, Timer_CheckTankSpawn, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 
     return Plugin_Handled;
 }
