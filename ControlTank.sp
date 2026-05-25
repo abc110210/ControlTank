@@ -150,8 +150,7 @@ public Action Timer_SelectAndTransformTank(Handle timer)
         return Plugin_Stop;
     }
 
-    // 移除所有AI Tank
-    RemoveAllAITanks();
+    // 不移除 AI Tank，直接选择玩家转换
 
     // 随机选择一名幸存者玩家
     int targetClient = SelectRandomSurvivor();
@@ -321,8 +320,19 @@ public Action Timer_ConvertToTank(Handle timer, DataPack data)
 
     PrintToServer("[寄寄之家-ControlTank] 步骤2：等待玩家完全死亡");
 
+    // 创建新的 DataPack 传递给下一个定时器
+    DataPack newData = new DataPack();
+    newData.WriteCell(userid);
+    newData.WriteCell(timeSeconds);
+    newData.WriteFloat(vPos[0]);
+    newData.WriteFloat(vPos[1]);
+    newData.WriteFloat(vPos[2]);
+    newData.WriteFloat(vAng[0]);
+    newData.WriteFloat(vAng[1]);
+    newData.WriteFloat(vAng[2]);
+
     // 等待更长时间确保玩家完全死亡
-    CreateTimer(0.5, Timer_ConvertStep2, data, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
+    CreateTimer(0.5, Timer_ConvertStep2, newData, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
 
     return Plugin_Stop;
 }
