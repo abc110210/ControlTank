@@ -344,8 +344,8 @@ public Action Timer_TakeoverExistingTank(Handle timer, DataPack data)
     PrintToServer("[寄寄之家-ControlTank] 步骤2：切换到感染者队伍");
     ChangeClientTeam(client, 3);
 
-    // 等待队伍切换完成后接管
-    CreateTimer(0.2, Timer_TakeoverExistingTank_Phase2, data, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
+    // 等待队伍切换完成后接管，不关闭DataPack
+    CreateTimer(0.2, Timer_TakeoverExistingTank_Phase2, data, TIMER_FLAG_NO_MAPCHANGE);
     return Plugin_Stop;
 }
 
@@ -376,6 +376,9 @@ public Action Timer_TakeoverExistingTank_Phase2(Handle timer, DataPack data)
 
     PrintToServer("[寄寄之家-ControlTank] 步骤3：接管AI Tank (索引: %d)", tankBot);
     L4D_TakeOverZombieBot(client, tankBot);
+
+    // 关闭 DataPack
+    delete data;
 
     // 等待接管完成后设置血量
     CreateTimer(0.1, Timer_TakeoverExistingTank_Finalize, userid, TIMER_FLAG_NO_MAPCHANGE);
@@ -484,8 +487,8 @@ public Action Command_Test2(int client, int args)
     ReplyToCommand(client, "[寄寄之家-ControlTank] 杀死玩家...");
     ForcePlayerSuicide(client);
 
-    // 如果是刚生成的Tank，等待时间稍长
-    float delay = needSpawn ? 1.0 : 0.5;
+    // 等待玩家完全死亡，如果是刚生成的Tank需要等待更长时间
+    float delay = needSpawn ? 2.0 : 1.5;
     CreateTimer(delay, Timer_Test2_Takeover, data, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
     return Plugin_Handled;
 }
@@ -503,9 +506,12 @@ public Action Timer_Test2_Takeover(Handle timer, DataPack data)
     int client = GetClientOfUserId(userid);
     if (!IsClientInGame(client))
     {
+        PrintToServer("[寄寄之家-ControlTank] 玩家不在游戏中");
         g_bIsManualTest = false;
         return Plugin_Stop;
     }
+
+    ReplyToCommand(client, "[寄寄之家-ControlTank] 定时器触发，开始转换流程...");
 
     // 验证AI Tank仍然存在
     if (!IsClientInGame(tankBot) || !IsFakeClient(tankBot) || !IsPlayerAlive(tankBot))
@@ -515,11 +521,11 @@ public Action Timer_Test2_Takeover(Handle timer, DataPack data)
         return Plugin_Stop;
     }
 
-    PrintToServer("[寄寄之家-ControlTank] 步骤1：切换到感染者队伍");
+    ReplyToCommand(client, "[寄寄之家-ControlTank] 步骤1：切换到感染者队伍");
     ChangeClientTeam(client, 3);
 
-    // 等待队伍切换完成
-    CreateTimer(0.2, Timer_Test2_TakeoverPhase2, data, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
+    // 等待队伍切换完成，不关闭DataPack，传递给下一个定时器
+    CreateTimer(0.3, Timer_Test2_TakeoverPhase2, data, TIMER_FLAG_NO_MAPCHANGE);
     return Plugin_Stop;
 }
 
@@ -533,9 +539,12 @@ public Action Timer_Test2_TakeoverPhase2(Handle timer, DataPack data)
     int client = GetClientOfUserId(userid);
     if (!IsClientInGame(client))
     {
+        PrintToServer("[寄寄之家-ControlTank] 阶段2：玩家不在游戏中");
         g_bIsManualTest = false;
         return Plugin_Stop;
     }
+
+    ReplyToCommand(client, "[寄寄之家-ControlTank] 步骤2：验证AI Tank状态...");
 
     // 再次验证AI Tank
     if (!IsClientInGame(tankBot) || !IsFakeClient(tankBot) || !IsPlayerAlive(tankBot))
@@ -545,11 +554,14 @@ public Action Timer_Test2_TakeoverPhase2(Handle timer, DataPack data)
         return Plugin_Stop;
     }
 
-    PrintToServer("[寄寄之家-ControlTank] 步骤2：接管 AI Tank (索引: %d)", tankBot);
+    ReplyToCommand(client, "[寄寄之家-ControlTank] 步骤3：接管 AI Tank (索引: %d)", tankBot);
     L4D_TakeOverZombieBot(client, tankBot);
 
+    // 关闭 DataPack，最后一个定时器不需要它
+    delete data;
+
     // 等待接管完成后设置属性
-    CreateTimer(0.1, Timer_Test2_Finalize, userid, TIMER_FLAG_NO_MAPCHANGE);
+    CreateTimer(0.2, Timer_Test2_Finalize, userid, TIMER_FLAG_NO_MAPCHANGE);
     return Plugin_Stop;
 }
 
