@@ -38,6 +38,7 @@ public void OnPluginStart()
     HookEvent("bot_player_replace", Event_BotPlayerReplace);
 
     RegConsoleCmd("sm_test2", Command_Test2, "测试接管AI Tank");
+    RegConsoleCmd("sm_tankinfo", Command_TankInfo, "显示Tank配置信息");
 }
 
 public void OnMapStart()
@@ -83,10 +84,14 @@ public Action L4D_OnSetTankFrustration(int tank, int &frustration)
             if (frustrationTime == 0)
             {
                 // 0 = 关闭挫折度系统，永久控制
+                PrintToServer("[ControlTank] 拦截挫折度: %d → 0 (玩家 %N)", frustration, tank);
                 frustration = 0;
             }
-            // 1 = 开启挫折度系统，使用游戏默认值
-            // 不需要修改 frustration，让游戏自然增长
+            else
+            {
+                // 1 = 开启挫折度系统，使用游戏默认值
+                PrintToServer("[ControlTank] 允许挫折度: %d (玩家 %N)", frustration, tank);
+            }
         }
     }
     return Plugin_Continue;
@@ -117,14 +122,20 @@ public void Event_PlayerBotReplace(Event event, const char[] name, bool dontBroa
     int player = GetClientOfUserId(event.GetInt("player"));
     int bot = GetClientOfUserId(event.GetInt("bot"));
 
+    char playerName[MAX_NAME_LENGTH];
+    GetClientName(player, playerName, sizeof(playerName));
+    PrintToServer("[ControlTank] 玩家 %N 被 bot 替换 (当前Tank: %N)", player, g_iCurrentTank);
+
     // 当玩家被bot替换时（玩家失去Tank控制权）
     if (player == g_iCurrentTank)
     {
         g_iCurrentTank = -1;
+        PrintToServer("[ControlTank] 当前Tank玩家失去控制权，将玩家移回幸存者阵营");
 
         // 将玩家放回幸存者阵营（死亡状态，可被复活）
         if (IsClientInGame(player))
         {
+            PrintToServer("[ControlTank] 步骤1: 切换 %N 到幸存者队伍", playerName);
             // 先切换到幸存者队伍
             ChangeClientTeam(player, 2);
 
@@ -572,4 +583,28 @@ bool IsCoopMode()
         return StrEqual(mode, "coop", false);
     }
     return false;
+}
+
+public Action Command_TankInfo(int client, int args)
+{
+    if (client == 0)
+    {
+        ReplyToCommand(client, "[寄寄之家-ControlTank] 此命令只能由玩家使用");
+        return Plugin_Handled;
+    }
+
+    ReplyToCommand(client, "========== [寄寄之家-ControlTank] 配置信息 ==========");
+    ReplyToCommand(client, "插件启用: %s", g_cvarEnabled.BoolValue ? "是" : "否");
+    ReplyToCommand(client, "Tank血量: %d", g_cvarTankHP.IntValue);
+    ReplyToCommand(client, "挫折度系统: %s", g_cvarTankFrustrationTime.IntValue == 0 ? "关闭 (永久控制)" : "开启 (系统默认)");
+    ReplyToCommand(client, "当前Tank: %s", g_iCurrentTank > 0 ? "有" : "无");
+    if (g_iCurrentTank > 0 && IsClientInGame(g_iCurrentTank))
+    {
+        char name[MAX_NAME_LENGTH];
+        GetClientName(g_iCurrentTank, name, sizeof(name));
+        ReplyToCommand(client, "Tank玩家: %s", name);
+    }
+    ReplyToCommand(client, "====================================");
+
+    return Plugin_Handled;
 }
