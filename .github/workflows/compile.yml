@@ -13,16 +13,11 @@ jobs:
         run: |
           wget -O sourcemod.tar.gz https://sm.alliedmods.net/smdrop/1.12/sourcemod-1.12.0-git6942-linux.tar.gz
           tar -xzf sourcemod.tar.gz
-          mkdir -p addons/sourcemod/scripting/include/
 
-      # 下载 left4dhooks 头文件（修正了文件名！）
-      - name: Install Left4DHooks includes
+      # 复制你上传的所有头文件到编译器目录
+      - name: Copy includes
         run: |
-          cd addons/sourcemod/scripting/include/
-          wget https://raw.githubusercontent.com/SilvDev/Left4DHooks/main/sourcemod/scripting/include/left4dhooks.inc
-          wget https://raw.githubusercontent.com/SilvDev/Left4DHooks/main/sourcemod/scripting/include/left4dhooks_forward.inc
-          wget https://raw.githubusercontent.com/SilvDev/Left4DHooks/main/sourcemod/scripting/include/left4dhooks_stocks.inc
-          cd ../../../../../
+          cp addons/sourcemod/scripting/include/*.inc addons/sourcemod/scripting/include/
 
       # 编译你的插件
       - name: Compile plugin
