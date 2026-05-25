@@ -317,12 +317,18 @@ public Action Timer_TakeoverTank(Handle timer, DataPack data)
 
     if (tankBot > 0)
     {
-        PrintToServer("[寄寄之家-ControlTank] 找到 Tank bot，开始接管...");
+        PrintToServer("[寄寄之家-ControlTank] 找到 Tank bot，开始替换...");
 
-        // 让玩家接管这个Tank bot
-        L4D_TakeOverZombieBot(client, tankBot);
+        // 先将玩家传送到 Tank 位置
+        float vPos[3], vAng[3];
+        GetClientAbsOrigin(tankBot, vPos);
+        GetClientAbsAngles(tankBot, vAng);
+        TeleportEntity(client, vPos, vAng, NULL_VECTOR);
 
-        // 等待接管完成
+        // 使用 L4D_ReplaceTank 替换 Tank 控制权
+        L4D_ReplaceTank(tankBot, client);
+
+        // 等待替换完成
         CreateTimer(0.3, Timer_VerifyTakeover, userid, TIMER_FLAG_NO_MAPCHANGE);
     }
     else
@@ -362,7 +368,14 @@ public Action Timer_RetryTakeover(Handle timer, DataPack data)
     {
         PrintToServer("[寄寄之家-ControlTank] 重试成功，找到 Tank bot");
 
-        L4D_TakeOverZombieBot(client, tankBot);
+        // 先将玩家传送到 Tank 位置
+        float vPos[3], vAng[3];
+        GetClientAbsOrigin(tankBot, vPos);
+        GetClientAbsAngles(tankBot, vAng);
+        TeleportEntity(client, vPos, vAng, NULL_VECTOR);
+
+        // 使用 L4D_ReplaceTank 替换 Tank 控制权
+        L4D_ReplaceTank(tankBot, client);
         CreateTimer(0.3, Timer_VerifyTakeover, userid, TIMER_FLAG_NO_MAPCHANGE);
     }
     else if (retryCount < 3)
