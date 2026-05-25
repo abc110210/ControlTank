@@ -149,13 +149,27 @@ public Action Timer_EnsurePlayerDead(Handle timer, int userid)
 {
     int player = GetClientOfUserId(userid);
 
+    PrintToServer("[ControlTank] Timer_EnsurePlayerDead 触发 (玩家 %N)", player);
+
     if (!IsClientInGame(player))
+    {
+        PrintToServer("[ControlTank] 玩家不在游戏中");
         return Plugin_Stop;
+    }
+
+    int team = GetClientTeam(player);
+    bool alive = IsPlayerAlive(player);
+    PrintToServer("[ControlTank] 玩家状态 - 队伍: %d, 存活: %d", team, alive);
 
     // 如果玩家在幸存者队伍但还活着，杀死他
-    if (GetClientTeam(player) == 2 && IsPlayerAlive(player))
+    if (team == 2 && alive)
     {
+        PrintToServer("[ControlTank] 执行: ForcePlayerSuicide");
         ForcePlayerSuicide(player);
+    }
+    else
+    {
+        PrintToServer("[ControlTank] 跳过 - 队伍: %d, 存活: %d", team, alive);
     }
 
     return Plugin_Stop;
@@ -557,6 +571,8 @@ public Action Timer_Test2_Finalize(Handle timer, int userid)
 
 void ApplyTankSettings(int client)
 {
+    PrintToServer("[ControlTank] ApplyTankSettings 调用 (玩家 %N)", client);
+
     // 设置Tank血量（如果需要）
     int tankHP = g_cvarTankHP.IntValue;
     if (tankHP > 0)
@@ -570,7 +586,9 @@ void ApplyTankSettings(int client)
     }
 
     // 设置初始挫折度为0
+    int frustrationTime = g_cvarTankFrustrationTime.IntValue;
     SetEntProp(client, Prop_Send, "m_frustration", 0);
+    PrintToServer("[ControlTank] 设置初始挫折度为0 (配置: %d)", frustrationTime);
 }
 
 bool IsCoopMode()
