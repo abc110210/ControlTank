@@ -1,5 +1,5 @@
 name: Compile ControlTank
-on:  workflow_dispatch
+on: workflow_dispatch
 
 jobs:
   build:
@@ -15,19 +15,18 @@ jobs:
           tar -xzf sourcemod.tar.gz
           mkdir -p addons/sourcemod/scripting/include/
 
-      # 下载 left4dhooks 头文件
+      # 下载 left4dhooks 头文件（修正了文件名！）
       - name: Install Left4DHooks includes
         run: |
           cd addons/sourcemod/scripting/include/
           wget https://raw.githubusercontent.com/SilvDev/Left4DHooks/main/sourcemod/scripting/include/left4dhooks.inc
-          wget https://raw.githubusercontent.com/SilvDev/Left4DHooks/main/sourcemod/scripting/include/left4dhooks_forwards.inc
+          wget https://raw.githubusercontent.com/SilvDev/Left4DHooks/main/sourcemod/scripting/include/left4dhooks_forward.inc
           wget https://raw.githubusercontent.com/SilvDev/Left4DHooks/main/sourcemod/scripting/include/left4dhooks_stocks.inc
           cd ../../../../../
 
       # 编译你的插件
       - name: Compile plugin
         run: |
-          # 把你的 ControlTank.sp 复制到编译目录
           cp *.sp addons/sourcemod/scripting/
           cd addons/sourcemod/scripting/
           ./spcomp ControlTank.sp -o ../../../../ControlTank.smx
