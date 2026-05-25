@@ -55,6 +55,7 @@ public void OnPluginStart()
     // 注册测试命令
     RegConsoleCmd("sm_tanktest", Command_TankTest, "测试Tank选择功能");
     RegConsoleCmd("sm_tankdebug", Command_TankDebug, "显示调试信息");
+    RegConsoleCmd("sm_tankspawn", Command_TankSpawn, "测试生成Tank");
 
     PrintToServer("[寄寄之家-ControlTank] 插件已加载!");
 }
@@ -673,6 +674,75 @@ public Action Command_TankTest(int client, int args)
     PrintToChatAll("\x03[寄寄之家-ControlTank] \x01玩家 \x04%s \x01被选中成为 \x04Tank! (测试)", playerName);
 
     return Plugin_Handled;
+}
+
+// 生成 Tank 测试命令
+public Action Command_TankSpawn(int client, int args)
+{
+    if (client == 0)
+    {
+        ReplyToCommand(client, "[寄寄之家-ControlTank] 此命令只能由玩家使用");
+        return Plugin_Handled;
+    }
+
+    ReplyToCommand(client, "[寄寄之家-ControlTank] 正在生成 Tank...");
+
+    // 方法1：使用 z_spawn 命令
+    ServerCommand("z_spawn tank auto");
+
+    // 等待后检查
+    CreateTimer(1.0, Timer_CheckTankSpawn, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+
+    return Plugin_Handled;
+}
+
+public Action Timer_CheckTankSpawn(Handle timer, int userid)
+{
+    int client = GetClientOfUserId(userid);
+
+    if (client > 0 && IsClientInGame(client))
+    {
+        int tankBot = FindTankBot();
+        ReplyToCommand(client, "[寄寄之家-ControlTank] Tank bot 查找结果: %d", tankBot);
+
+        if (tankBot > 0)
+        {
+            ReplyToCommand(client, "[寄寄之家-ControlTank] ✓ Tank 生成成功！Tank bot 索引: %d", tankBot);
+        }
+        else
+        {
+            ReplyToCommand(client, "[寄寄之家-ControlTank] ✗ Tank 生成失败或未找到");
+
+            // 列出所有感染者 bot
+            ReplyToCommand(client, "---------- 感染者列表 ----------");
+            for (int i = 1; i <= MaxClients; i++)
+            {
+                if (IsClientInGame(i) && IsFakeClient(i))
+                {
+                    if (GetClientTeam(i) == 3)
+                    {
+                        int zClass = GetEntProp(i, Prop_Send, "m_zombieClass");
+                        char className[16];
+                        switch (zClass)
+                        {
+                            case 1: className = "Smoker";
+                            case 2: className = "Boomer";
+                            case 3: className = "Hunter";
+                            case 4: className = "Spitter";
+                            case 5: className = "Jockey";
+                            case 6: className = "Charger";
+                            case 7: className = "未使用";
+                            case 8: className = "Tank";
+                            default: className = "未知";
+                        }
+                        ReplyToCommand(client, "[%d] %s - 存活:%d", i, className, IsPlayerAlive(i));
+                    }
+                }
+            }
+        }
+    }
+
+    return Plugin_Stop;
 }
 
 // 调试命令
