@@ -324,9 +324,9 @@ public Action Timer_ConvertToTank(Handle timer, DataPack data)
     // 切换到感染者队伍
     ChangeClientTeam(client, 3);
 
-    // 设置为 Tank 类别
-    PrintToServer("[寄寄之家-ControlTank] 步骤3：设置为 Tank 类别");
-    SetEntProp(client, Prop_Send, "m_zombieClass", 8);
+    // 使用 L4D_SetClass 设置为 Tank 类别（而不是 SetEntProp）
+    PrintToServer("[寄寄之家-ControlTank] 步骤3：使用 L4D_SetClass 设置为 Tank");
+    L4D_SetClass(client, 8);
 
     // 传送回原位置
     PrintToServer("[寄寄之家-ControlTank] 步骤4：传送到原位置");
@@ -346,7 +346,13 @@ public Action Timer_ConvertToTank(Handle timer, DataPack data)
     PrintToServer("[寄寄之家-ControlTank] 步骤7：复活玩家");
     L4D_RespawnPlayer(client);
 
-    PrintToServer("[寄寄之家-ControlTank] 转换完成");
+    // 再次设置类别和血量，确保没有被重置
+    PrintToServer("[寄寄之家-ControlTank] 步骤8：再次设置类别和血量");
+    L4D_SetClass(client, 8);
+    SetEntProp(client, Prop_Send, "m_iHealth", 4000);
+    SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
+
+    PrintToServer("[寄寄之家-ControlTank] 转换完成，当前类别: %d", GetEntProp(client, Prop_Send, "m_zombieClass"));
 
     // 显示控制时间信息
     if (timeSeconds > 0)
