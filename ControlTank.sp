@@ -349,17 +349,32 @@ public Action Command_Test2(int client, int args)
     if (client == 0) return Plugin_Handled;
     if (!IsClientInGame(client)) return Plugin_Handled;
 
-    ReplyToCommand(client, "[寄寄之家-ControlTank] ========== 接管现有AI Tank ==========");
+    ReplyToCommand(client, "[寄寄之家-ControlTank] ========== 接管AI Tank ==========");
 
     // 查找现有的AI Tank
     int tankBot = FindTankBot();
+    bool needSpawn = false;
+
     if (tankBot <= 0)
     {
-        ReplyToCommand(client, "[寄寄之家-ControlTank] ✗ 未找到AI Tank");
-        return Plugin_Handled;
-    }
+        ReplyToCommand(client, "[寄寄之家-ControlTank] 未找到AI Tank，正在生成...");
+        float vPos[3], vAng[3];
+        GetClientAbsOrigin(client, vPos);
+        GetClientAbsAngles(client, vAng);
 
-    ReplyToCommand(client, "[寄寄之家-ControlTank] 找到AI Tank (索引: %d)，准备接管...", tankBot);
+        tankBot = L4D2_SpawnTank(vPos, vAng);
+        if (tankBot <= 0)
+        {
+            ReplyToCommand(client, "[寄寄之家-ControlTank] ✗ Tank生成失败");
+            return Plugin_Handled;
+        }
+        ReplyToCommand(client, "[寄寄之家-ControlTank] ✓ Tank生成成功 (索引: %d)", tankBot);
+        needSpawn = true;
+    }
+    else
+    {
+        ReplyToCommand(client, "[寄寄之家-ControlTank] 找到现有AI Tank (索引: %d)", tankBot);
+    }
 
     float vPos[3], vAng[3];
     GetClientAbsOrigin(client, vPos);
@@ -368,6 +383,7 @@ public Action Command_Test2(int client, int args)
     DataPack data = new DataPack();
     data.WriteCell(GetClientUserId(client));
     data.WriteCell(tankBot);
+    data.WriteCell(needSpawn ? 1 : 0);  // 标记是否刚生成
     data.WriteFloat(vPos[0]);
     data.WriteFloat(vPos[1]);
     data.WriteFloat(vPos[2]);
@@ -378,7 +394,9 @@ public Action Command_Test2(int client, int args)
     ReplyToCommand(client, "[寄寄之家-ControlTank] 杀死玩家...");
     ForcePlayerSuicide(client);
 
-    CreateTimer(0.5, Timer_Test2_Takeover, data, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
+    // 如果是刚生成的Tank，等待时间稍长
+    float delay = needSpawn ? 1.0 : 0.5;
+    CreateTimer(delay, Timer_Test2_Takeover, data, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
     return Plugin_Handled;
 }
 
@@ -387,6 +405,7 @@ public Action Timer_Test2_Takeover(Handle timer, DataPack data)
     data.Reset();
     int userid = data.ReadCell();
     int tankBot = data.ReadCell();
+    int needSpawn = data.ReadCell();  // 读取是否刚生成的标记
     float vPos[3], vAng[3];
     vPos[0] = data.ReadFloat(); vPos[1] = data.ReadFloat(); vPos[2] = data.ReadFloat();
     vAng[0] = data.ReadFloat(); vAng[1] = data.ReadFloat(); vAng[2] = data.ReadFloat();
@@ -401,16 +420,16 @@ public Action Timer_Test2_Takeover(Handle timer, DataPack data)
         return Plugin_Stop;
     }
 
-    PrintToServer("[寄寄之家-ControlTank] 方法2 - 切换队伍");
+    PrintToServer("[寄寄之家-ControlTank] 切换到感染者队伍");
     ChangeClientTeam(client, 3);
 
-    PrintToServer("[寄寄之家-ControlTank] 方法2 - 接管 AI Tank (索引: %d)", tankBot);
+    PrintToServer("[寄寄之家-ControlTank] 接管 AI Tank (索引: %d)", tankBot);
     L4D_TakeOverZombieBot(client, tankBot);
 
     SetEntProp(client, Prop_Send, "m_iHealth", 4000);
     SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
 
-    PrintToServer("[寄寄之家-ControlTank] 方法2 - 完成，类别:%d 存活:%d", GetEntProp(client, Prop_Send, "m_zombieClass"), IsPlayerAlive(client));
+    PrintToServer("[寄寄之家-ControlTank] 转换完成，类别:%d 存活:%d", GetEntProp(client, Prop_Send, "m_zombieClass"), IsPlayerAlive(client));
     ReplyToCommand(client, "[寄寄之家-ControlTank] ✓ 转换完成！当前类别: %d, 存活: %d", GetEntProp(client, Prop_Send, "m_zombieClass"), IsPlayerAlive(client));
     return Plugin_Stop;
 }
