@@ -14,17 +14,12 @@ jobs:
           wget -O sourcemod.tar.gz https://sm.alliedmods.net/smdrop/1.12/sourcemod-1.12.0-git6942-linux.tar.gz
           tar -xzf sourcemod.tar.gz
 
-      # 只复制 Left4DHooks 的 5 个头文件（关键！）
-      - name: Copy includes
-        run: |
-          cp addons/sourcemod/scripting/include/left4dhooks*.inc addons/sourcemod/scripting/include/
-
-      # 编译你的插件
+      # 编译插件（直接用 -i 参数指定 include 目录）
       - name: Compile plugin
         run: |
-          cp *.sp addons/sourcemod/scripting/
-          cd addons/sourcemod/scripting/
-          ./spcomp ControlTank.sp -o ../../../../ControlTank.smx
+          ./addons/sourcemod/scripting/spcomp ControlTank.sp \
+            -i ./addons/sourcemod/scripting/include/ \
+            -o ControlTank.smx
 
       # 上传编译好的 smx 文件
       - name: Upload compiled plugin
