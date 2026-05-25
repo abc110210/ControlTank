@@ -15,8 +15,18 @@ public Plugin myinfo =
     url = ""
 };
 
+public Plugin myinfo =
+{
+    name = "Control Tank",
+    author = "Shan",
+    description = "在合作战役模式中，Tank出现时随机选择一名玩家变成Tank",
+    version = "1.0.0",
+    url = ""
+};
+
 ConVar g_cvarEnabled;
 ConVar g_cvarTankHP;
+ConVar g_cvarTankFrustrationTime;
 bool g_bTankSpawning = false;
 bool g_bIsManualTest = false;
 int g_iCurrentTank = -1;
@@ -25,6 +35,7 @@ public void OnPluginStart()
 {
     g_cvarEnabled = CreateConVar("shan_controltank_enabled", "1", "是否启用Tank随机选择功能", FCVAR_NOTIFY, true, 0.0, true, 1.0);
     g_cvarTankHP = CreateConVar("shan_controltank_hp", "4000", "Tank血量设置", FCVAR_NOTIFY, true, 1.0, true, 120000.0);
+    g_cvarTankFrustrationTime = CreateConVar("shan_controltank_time", "0", "Tank挫折度系统(0=关闭/永久控制, 1=开启/系统默认)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 
     AutoExecConfig(true, "controltank");
     HookConVarChange(g_cvarTankHP, OnTankHPChanged);
@@ -43,6 +54,7 @@ public void OnMapStart()
     g_bTankSpawning = false;
     g_iCurrentTank = -1;
 
+    // 设置Tank血量
     int tankHP = g_cvarTankHP.IntValue;
     if (tankHP > 0)
     {
@@ -67,6 +79,28 @@ public void OnTankHPChanged(ConVar convar, const char[] oldValue, const char[] n
     }
 }
 
+// 监控Tank挫折度设置
+public Action L4D_OnSetTankFrustration(int tank, int &frustration)
+{
+    if (tank > 0 && tank <= MaxClients && IsClientInGame(tank))
+    {
+        // 只处理玩家控制的Tank
+        if (!IsFakeClient(tank))
+        {
+            int frustrationTime = g_cvarTankFrustrationTime.IntValue;
+
+            if (frustrationTime == 0)
+            {
+                // 0 = 关闭挫折度系统，永久控制
+                frustration = 0;
+            }
+            // 1 = 开启挫折度系统，使用游戏默认值
+            // 不需要修改 frustration，让游戏自然增长
+        }
+    }
+    return Plugin_Continue;
+}
+
 public void OnMapEnd()
 {
     g_iCurrentTank = -1;
@@ -89,11 +123,40 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
 
 public void Event_PlayerBotReplace(Event event, const char[] name, bool dontBroadcast)
 {
+    int player = GetClientOfUserId(event.GetInt("player"));
     int bot = GetClientOfUserId(event.GetInt("bot"));
-    if (bot == g_iCurrentTank)
+
+    // 当玩家被bot替换时（玩家失去Tank控制权）
+    if (player == g_iCurrentTank)
     {
         g_iCurrentTank = -1;
+
+        // 将玩家放回幸存者阵营（死亡状态，可被复活）
+        if (IsClientInGame(player))
+        {
+            // 先切换到幸存者队伍
+            ChangeClientTeam(player, 2);
+
+            // 等待队伍切换完成后，检查并确保玩家处于死亡状态
+            CreateTimer(0.1, Timer_EnsurePlayerDead, GetClientUserId(player), TIMER_FLAG_NO_MAPCHANGE);
+        }
     }
+}
+
+public Action Timer_EnsurePlayerDead(Handle timer, int userid)
+{
+    int player = GetClientOfUserId(userid);
+
+    if (!IsClientInGame(player))
+        return Plugin_Stop;
+
+    // 如果玩家在幸存者队伍但还活着，杀死他
+    if (GetClientTeam(player) == 2 && IsPlayerAlive(player))
+    {
+        ForcePlayerSuicide(player);
+    }
+
+    return Plugin_Stop;
 }
 
 public void Event_BotPlayerReplace(Event event, const char[] name, bool dontBroadcast)
@@ -141,11 +204,11 @@ public Action Timer_SelectAndTransformTank(Handle timer)
 
         char playerName[MAX_NAME_LENGTH];
         GetClientName(targetClient, playerName, sizeof(playerName));
-        PrintToChatAll("\x03[寄寄之家-ControlTank] \x01玩家 \x04%s \x01被选中成为 \x04Tank!", playerName);
+        PrintToChatAll("\x03[寄寄之家-ControlTank] \x01玩家 \x04%s \x01被选中成为 \x04Tank", playerName);
     }
     else
     {
-        PrintToChatAll("\x03[寄寄之家-ControlTank] \x01没有找到合适的玩家，将由 AI 控制 Tank");
+        PrintToChatAll("\x03[寄寄之家-ControlTank] \x01Tank失去控制权，将由 \x04AI \x01控制 \x04Tank");
     }
 
     g_bTankSpawning = false;
@@ -315,6 +378,9 @@ public Action Timer_TakeoverExistingTank_Phase2(Handle timer, DataPack data)
     L4D_TakeOverZombieBot(client, tankBot);
     delete data;
 
+    // 应用Tank设置
+    ApplyTankSettings(client);
+
     return Plugin_Stop;
 }
 
@@ -478,10 +544,31 @@ public Action Timer_Test2_Finalize(Handle timer, int userid)
         return Plugin_Stop;
     }
 
+    // 应用Tank设置
+    ApplyTankSettings(client);
+
     ReplyToCommand(client, "[寄寄之家-ControlTank] ✓ 已转换为 Tank");
 
     g_bIsManualTest = false;
     return Plugin_Stop;
+}
+
+void ApplyTankSettings(int client)
+{
+    // 设置Tank血量（如果需要）
+    int tankHP = g_cvarTankHP.IntValue;
+    if (tankHP > 0)
+    {
+        int currentHP = GetEntProp(client, Prop_Send, "m_iHealth");
+        if (currentHP < tankHP)
+        {
+            SetEntProp(client, Prop_Send, "m_iHealth", tankHP);
+            SetEntProp(client, Prop_Send, "m_iMaxHealth", tankHP);
+        }
+    }
+
+    // 设置初始挫折度为0
+    SetEntProp(client, Prop_Send, "m_frustration", 0);
 }
 
 bool IsCoopMode()
