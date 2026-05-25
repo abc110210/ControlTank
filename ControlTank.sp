@@ -271,39 +271,76 @@ void TransformPlayerToTank(int client)
         }
     }
 
-    PrintToServer("[寄寄之家-ControlTank] 开始直接转换玩家为 Tank...");
+    PrintToServer("[寄寄之家-ControlTank] 开始转换流程...");
 
-    // 保存玩家当前位置
+    // 步骤1：用 bot 替换玩家，让玩家进入观察者模式
+    PrintToServer("[寄寄之家-ControlTank] 步骤1：用 bot 替换玩家");
+    L4D_ReplaceWithBot(client);
+
+    // 步骤2：等待后使用 z_spawn 生成 Tank
+    PrintToServer("[寄寄之家-ControlTank] 步骤2：准备生成 Tank");
+    CreateTimer(0.3, Timer_SpawnAndTakeover, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+}
+
+public Action Timer_SpawnAndTakeover(Handle timer, int userid)
+{
+    int client = GetClientOfUserId(userid);
+
+    if (!IsClientInGame(client))
+    {
+        g_iCurrentTank = -1;
+        return Plugin_Stop;
+    }
+
+    PrintToServer("[寄寄之家-ControlTank] 步骤3：使用 z_spawn 生成 Tank");
+
+    // 使用 z_spawn 命令生成 Tank（这样生成的 bot 更容易被接管）
+    ServerCommand("z_spawn tank auto");
+
+    // 等待 Tank 生成后接管
+    CreateTimer(1.0, Timer_TakeoverTank, userid, TIMER_FLAG_NO_MAPCHANGE);
+
+    return Plugin_Stop;
+}
+
+public Action Timer_TakeoverTank(Handle timer, int userid)
+{
+    int client = GetClientOfUserId(userid);
+
+    if (!IsClientInGame(client))
+    {
+        g_iCurrentTank = -1;
+        return Plugin_Stop;
+    }
+
+    // 查找 Tank bot
+    int tankBot = FindTankBot();
+
+    if (tankBot <= 0)
+    {
+        PrintToServer("[寄寄之家-ControlTank] 错误：未找到 Tank bot");
+        PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01未找到 Tank bot");
+        g_iCurrentTank = -1;
+        return Plugin_Stop;
+    }
+
+    PrintToServer("[寄寄之家-ControlTank] 步骤4：找到 Tank bot: %d", tankBot);
+    PrintToServer("[寄寄之家-ControlTank] 玩家队伍: %d, 存活: %d", GetClientTeam(client), IsPlayerAlive(client));
+
+    // 传送到 Tank 位置
     float vPos[3], vAng[3];
-    GetClientAbsOrigin(client, vPos);
-    GetClientAbsAngles(client, vAng);
-
-    // 直接将玩家转换成 Tank
-    ChangeClientTeam(client, 3);           // 切换到感染者队伍
-    SetEntProp(client, Prop_Send, "m_zombieClass", 8);  // 设置为 Tank 类别
-
-    // 传送到原位置
+    GetClientAbsOrigin(tankBot, vPos);
+    GetClientAbsAngles(tankBot, vAng);
     TeleportEntity(client, vPos, vAng, NULL_VECTOR);
 
-    // 设置 Tank 血量
-    SetEntProp(client, Prop_Send, "m_iHealth", 4000);
-    SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
+    // 让玩家接管 Tank bot
+    PrintToServer("[寄寄之家-ControlTank] 步骤5：调用 L4D_TakeOverZombieBot(%d, %d)", client, tankBot);
+    L4D_TakeOverZombieBot(client, tankBot);
 
-    // 从 ghost 状态实体化
-    L4D_MaterializeFromGhost(client);
+    // 等待验证
+    CreateTimer(0.3, Timer_VerifyTakeover, userid, TIMER_FLAG_NO_MAPCHANGE);
 
-    PrintToServer("[寄寄之家-ControlTank] 转换完成");
-
-    // 显示控制时间信息
-    if (timeSeconds > 0)
-    {
-        PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01你有 \x04%d \x01秒的Tank控制时间！", timeSeconds);
-        g_hTankTimer = CreateTimer(float(timeSeconds), Timer_TankTimeExpired, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
-    }
-    else
-    {
-        PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01你有 \x04无限制\x01 的Tank控制时间!");
-    }
+    return Plugin_Stop;
 }
 
 public Action Timer_TakeoverTank(Handle timer, DataPack data)
@@ -649,12 +686,6 @@ public Action Command_TankTest(int client, int args)
     if (!IsClientInGame(client))
     {
         ReplyToCommand(client, "[寄寄之家-ControlTank] 你不在游戏中");
-        return Plugin_Handled;
-    }
-
-    if (GetClientTeam(client) != 2)
-    {
-        ReplyToCommand(client, "[寄寄之家-ControlTank] 你必须在幸存者队伍");
         return Plugin_Handled;
     }
 
