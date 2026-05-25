@@ -356,30 +356,13 @@ public Action Timer_TakeoverZombieBot(Handle timer, DataPack data)
         return Plugin_Stop;
     }
 
-    // 重新查找 Tank bot（因为之前的 bot 索引可能已经改变）
-    int tankBot = FindTankBot();
+    PrintToServer("[寄寄之家-ControlTank] 开始设置 Tank tickets...");
 
-    PrintToServer("[寄寄之家-ControlTank] 尝试接管 Tank bot %d", tankBot);
-
-    if (tankBot <= 0)
-    {
-        PrintToServer("[寄寄之家-ControlTank] 错误：Tank bot 已消失");
-        PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01转换失败，Tank bot 已消失");
-        g_iCurrentTank = -1;
-        return Plugin_Stop;
-    }
-
-    // 先将玩家传送到 Tank 位置
-    float vPos[3], vAng[3];
-    GetClientAbsOrigin(tankBot, vPos);
-    GetClientAbsAngles(tankBot, vAng);
-    TeleportEntity(client, vPos, vAng, NULL_VECTOR);
-
-    // 让玩家接管 Tank bot
-    L4D_TakeOverZombieBot(client, tankBot);
+    // 设置玩家的 Tank tickets（这会触发接管）
+    L4D2Direct_SetTankTickets(client, 10000);
 
     // 等待接管完成
-    CreateTimer(0.3, Timer_VerifyTakeover, userid, TIMER_FLAG_NO_MAPCHANGE);
+    CreateTimer(0.5, Timer_VerifyTakeover, userid, TIMER_FLAG_NO_MAPCHANGE);
 
     return Plugin_Stop;
 }
