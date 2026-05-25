@@ -741,7 +741,7 @@ public Action Command_Test5(int client, int args)
     ReplyToCommand(client, "[寄寄之家-ControlTank] ========== 方法5：L4D_ReplaceWithBot + 接管 ==========");
 
     ReplyToCommand(client, "[寄寄之家-ControlTank] 替换为 bot...");
-    L4D_ReplaceWithBot(client, true);
+    L4D_ReplaceWithBot(client);
 
     CreateTimer(0.5, Timer_Test5_Convert, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
     return Plugin_Handled;
