@@ -42,9 +42,16 @@ public void OnPluginStart()
     HookEvent("bot_player_replace", Event_BotPlayerReplace);
 
     // 注册测试命令
-    RegConsoleCmd("sm_tanktest", Command_TankTest, "测试Tank选择功能");
     RegConsoleCmd("sm_tankdebug", Command_TankDebug, "显示调试信息");
     RegConsoleCmd("sm_tankspawn", Command_TankSpawn, "测试生成Tank");
+
+    // 多种转换方法测试命令
+    RegConsoleCmd("sm_test1", Command_Test1, "方法1: 直接转换");
+    RegConsoleCmd("sm_test2", Command_Test2, "方法2: L4D2_SpawnTank + 接管");
+    RegConsoleCmd("sm_test3", Command_Test3, "方法3: z_spawn + 接管");
+    RegConsoleCmd("sm_test4", Command_Test4, "方法4: L4D_ReplaceTank");
+    RegConsoleCmd("sm_test5", Command_Test5, "方法5: L4D_ReplaceWithBot + 接管");
+    RegConsoleCmd("sm_test6", Command_Test6, "方法6: 复活后设置类别");
 
     PrintToServer("[寄寄之家-ControlTank] 插件已加载!");
 }
@@ -272,32 +279,94 @@ public Action Timer_ConvertToTank(Handle timer, DataPack data)
 
     PrintToServer("[寄寄之家-ControlTank] 步骤2：玩家已死亡，开始转换流程");
 
-    // 步骤3：切换到感染者队伍
-    PrintToServer("[寄寄之家-ControlTank] 步骤3：切换到感染者队伍");
+    // 步骤3：使用 L4D2_SpawnTank 生成一个 Tank bot
+    PrintToServer("[寄寄之家-ControlTank] 步骤3：生成 Tank bot");
+    int tankBot = L4D2_SpawnTank(vPos, vAng);
+
+    if (tankBot > 0)
+    {
+        PrintToServer("[寄寄之家-ControlTank] Tank bot 生成成功，索引: %d", tankBot);
+
+        // 等待 bot 生成完成
+        CreateTimer(0.5, Timer_TakeoverTankBot, data, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
+    }
+    else
+    {
+        PrintToServer("[寄寄之家-ControlTank] Tank bot 生成失败，尝试备用方法");
+
+        // 备用方法：切换到感染者队伍并设置类别
+        PrintToServer("[寄寄之家-ControlTank] 步骤4：切换到感染者队伍");
+        ChangeClientTeam(client, 3);
+
+        PrintToServer("[寄寄之家-ControlTank] 步骤5：复活玩家");
+        L4D_RespawnPlayer(client);
+
+        PrintToServer("[寄寄之家-ControlTank] 步骤6：使用 L4D_SetClass 设置为 Tank");
+        L4D_SetClass(client, 8);
+
+        vPos[2] += 50.0;
+        PrintToServer("[寄寄之家-ControlTank] 步骤7：传送到位置 (%.2f, %.2f, %.2f)", vPos[0], vPos[1], vPos[2]);
+        TeleportEntity(client, vPos, vAng, NULL_VECTOR);
+
+        PrintToServer("[寄寄之家-ControlTank] 步骤8：实体化");
+        L4D_BecomeGhost(client);
+        L4D_MaterializeFromGhost(client);
+
+        PrintToServer("[寄寄之家-ControlTank] 步骤9：设置血量");
+        SetEntProp(client, Prop_Send, "m_iHealth", 4000);
+        SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
+
+        PrintToServer("[寄寄之家-ControlTank] 转换完成，当前类别: %d, 存活: %d", GetEntProp(client, Prop_Send, "m_zombieClass"), IsPlayerAlive(client));
+    }
+
+    return Plugin_Stop;
+}
+
+public Action Timer_TakeoverTankBot(Handle timer, DataPack data)
+{
+    PrintToServer("[寄寄之家-ControlTank] Timer_TakeoverTankBot 被调用");
+
+    data.Reset();
+    int userid = data.ReadCell();
+    float vPos[3], vAng[3];
+    vPos[0] = data.ReadFloat();
+    vPos[1] = data.ReadFloat();
+    vPos[2] = data.ReadFloat();
+    vAng[0] = data.ReadFloat();
+    vAng[1] = data.ReadFloat();
+    vAng[2] = data.ReadFloat();
+
+    int client = GetClientOfUserId(userid);
+
+    if (!IsClientInGame(client))
+    {
+        PrintToServer("[寄寄之家-ControlTank] 玩家不在游戏中，中止转换");
+        g_iCurrentTank = -1;
+        return Plugin_Stop;
+    }
+
+    // 查找 Tank bot
+    int tankBot = FindTankBot();
+
+    if (tankBot <= 0)
+    {
+        PrintToServer("[寄寄之家-ControlTank] 错误：未找到 Tank bot");
+        g_iCurrentTank = -1;
+        return Plugin_Stop;
+    }
+
+    PrintToServer("[寄寄之家-ControlTank] 步骤4：找到 Tank bot，索引: %d", tankBot);
+
+    // 切换到感染者队伍
+    PrintToServer("[寄寄之家-ControlTank] 步骤5：切换到感染者队伍");
     ChangeClientTeam(client, 3);
 
-    // 步骤4：使用 L4D_SetClass 设置为 Tank 类别
-    PrintToServer("[寄寄之家-ControlTank] 步骤4：使用 L4D_SetClass 设置为 Tank");
-    L4D_SetClass(client, 8);
+    // 接管 Tank bot
+    PrintToServer("[寄寄之家-ControlTank] 步骤6：接管 Tank bot");
+    L4D_TakeOverZombieBot(client, tankBot);
 
-    // 步骤5：稍微抬高 Z 轴位置避免卡地下
-    vPos[2] += 50.0;
-    PrintToServer("[寄寄之家-ControlTank] 步骤5：传送到位置 (%.2f, %.2f, %.2f)", vPos[0], vPos[1], vPos[2]);
-
-    // 步骤6：复活玩家（在 ghost 和实体化之前）
-    PrintToServer("[寄寄之家-ControlTank] 步骤6：复活玩家");
-    L4D_RespawnPlayer(client);
-
-    // 步骤7：传送到位置
-    TeleportEntity(client, vPos, vAng, NULL_VECTOR);
-
-    // 步骤8：设置为 ghost 状态然后实体化
-    PrintToServer("[寄寄之家-ControlTank] 步骤7：实体化");
-    L4D_BecomeGhost(client);
-    L4D_MaterializeFromGhost(client);
-
-    // 步骤9：设置 Tank 血量
-    PrintToServer("[寄寄之家-ControlTank] 步骤8：设置血量");
+    // 设置 Tank 血量
+    PrintToServer("[寄寄之家-ControlTank] 步骤7：设置血量");
     SetEntProp(client, Prop_Send, "m_iHealth", 4000);
     SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
 
@@ -480,6 +549,309 @@ public Action Command_TankDebug(int client, int args)
     ReplyToCommand(client, "====================================");
 
     return Plugin_Handled;
+}
+
+// ==================== 测试方法1：直接转换 ====================
+public Action Command_Test1(int client, int args)
+{
+    if (client == 0) return Plugin_Handled;
+    if (!IsClientInGame(client)) return Plugin_Handled;
+
+    ReplyToCommand(client, "[寄寄之家-ControlTank] ========== 方法1：直接转换 ==========");
+
+    float vPos[3], vAng[3];
+    GetClientAbsOrigin(client, vPos);
+    GetClientAbsAngles(client, vAng);
+
+    ReplyToCommand(client, "[寄寄之家-ControlTank] 杀死玩家...");
+    ForcePlayerSuicide(client);
+
+    DataPack data = new DataPack();
+    data.WriteCell(GetClientUserId(client));
+    data.WriteFloat(vPos[0]);
+    data.WriteFloat(vPos[1]);
+    data.WriteFloat(vPos[2]);
+    data.WriteFloat(vAng[0]);
+    data.WriteFloat(vAng[1]);
+    data.WriteFloat(vAng[2]);
+
+    CreateTimer(1.0, Timer_Test1_Convert, data, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
+    return Plugin_Handled;
+}
+
+public Action Timer_Test1_Convert(Handle timer, DataPack data)
+{
+    data.Reset();
+    int userid = data.ReadCell();
+    float vPos[3], vAng[3];
+    vPos[0] = data.ReadFloat(); vPos[1] = data.ReadFloat(); vPos[2] = data.ReadFloat();
+    vAng[0] = data.ReadFloat(); vAng[1] = data.ReadFloat(); vAng[2] = data.ReadFloat();
+
+    int client = GetClientOfUserId(userid);
+    if (!IsClientInGame(client)) return Plugin_Stop;
+
+    PrintToServer("[寄寄之家-ControlTank] 方法1 - 步骤1：切换队伍");
+    ChangeClientTeam(client, 3);
+
+    PrintToServer("[寄寄之家-ControlTank] 方法1 - 步骤2：复活");
+    L4D_RespawnPlayer(client);
+
+    PrintToServer("[寄寄之家-ControlTank] 方法1 - 步骤3：设置类别");
+    L4D_SetClass(client, 8);
+
+    vPos[2] += 50.0;
+    PrintToServer("[寄寄之家-ControlTank] 方法1 - 步骤4：传送");
+    TeleportEntity(client, vPos, vAng, NULL_VECTOR);
+
+    PrintToServer("[寄寄之家-ControlTank] 方法1 - 步骤5：实体化");
+    L4D_BecomeGhost(client);
+    L4D_MaterializeFromGhost(client);
+
+    SetEntProp(client, Prop_Send, "m_iHealth", 4000);
+    SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
+
+    PrintToServer("[寄寄之家-ControlTank] 方法1 - 完成，类别:%d 存活:%d", GetEntProp(client, Prop_Send, "m_zombieClass"), IsPlayerAlive(client));
+    return Plugin_Stop;
+}
+
+// ==================== 测试方法2：L4D2_SpawnTank + 接管 ====================
+public Action Command_Test2(int client, int args)
+{
+    if (client == 0) return Plugin_Handled;
+    if (!IsClientInGame(client)) return Plugin_Handled;
+
+    ReplyToCommand(client, "[寄寄之家-ControlTank] ========== 方法2：L4D2_SpawnTank + 接管 ==========");
+
+    float vPos[3], vAng[3];
+    GetClientAbsOrigin(client, vPos);
+    GetClientAbsAngles(client, vAng);
+
+    ReplyToCommand(client, "[寄寄之家-ControlTank] 生成 Tank bot...");
+    int tankBot = L4D2_SpawnTank(vPos, vAng);
+
+    if (tankBot > 0)
+    {
+        ReplyToCommand(client, "[寄寄之家-ControlTank] Tank bot 生成成功，索引: %d", tankBot);
+        CreateTimer(0.5, Timer_Test2_Takeover, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+    }
+    else
+    {
+        ReplyToCommand(client, "[寄寄之家-ControlTank] ✗ Tank bot 生成失败");
+    }
+
+    return Plugin_Handled;
+}
+
+public Action Timer_Test2_Takeover(Handle timer, int userid)
+{
+    int client = GetClientOfUserId(userid);
+    if (!IsClientInGame(client)) return Plugin_Stop;
+
+    int tankBot = FindTankBot();
+    if (tankBot <= 0)
+    {
+        ReplyToCommand(client, "[寄寄之家-ControlTank] ✗ 未找到 Tank bot");
+        return Plugin_Stop;
+    }
+
+    PrintToServer("[寄寄之家-ControlTank] 方法2 - 切换队伍");
+    ChangeClientTeam(client, 3);
+
+    PrintToServer("[寄寄之家-ControlTank] 方法2 - 接管 Tank bot");
+    L4D_TakeOverZombieBot(client, tankBot);
+
+    SetEntProp(client, Prop_Send, "m_iHealth", 4000);
+    SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
+
+    PrintToServer("[寄寄之家-ControlTank] 方法2 - 完成，类别:%d 存活:%d", GetEntProp(client, Prop_Send, "m_zombieClass"), IsPlayerAlive(client));
+    return Plugin_Stop;
+}
+
+// ==================== 测试方法3：z_spawn + 接管 ====================
+public Action Command_Test3(int client, int args)
+{
+    if (client == 0) return Plugin_Handled;
+    if (!IsClientInGame(client)) return Plugin_Handled;
+
+    ReplyToCommand(client, "[寄寄之家-ControlTank] ========== 方法3：z_spawn + 接管 ==========");
+
+    ReplyToCommand(client, "[寄寄之家-ControlTank] 使用 z_spawn 生成 Tank...");
+    ServerCommand("z_spawn tank auto");
+
+    CreateTimer(1.0, Timer_Test3_Takeover, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+    return Plugin_Handled;
+}
+
+public Action Timer_Test3_Takeover(Handle timer, int userid)
+{
+    int client = GetClientOfUserId(userid);
+    if (!IsClientInGame(client)) return Plugin_Stop;
+
+    int tankBot = FindTankBot();
+    if (tankBot <= 0)
+    {
+        ReplyToCommand(client, "[寄寄之家-ControlTank] ✗ 未找到 Tank bot");
+        return Plugin_Stop;
+    }
+
+    PrintToServer("[寄寄之家-ControlTank] 方法3 - 切换队伍");
+    ChangeClientTeam(client, 3);
+
+    PrintToServer("[寄寄之家-ControlTank] 方法3 - 接管 Tank bot");
+    L4D_TakeOverZombieBot(client, tankBot);
+
+    SetEntProp(client, Prop_Send, "m_iHealth", 4000);
+    SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
+
+    PrintToServer("[寄寄之家-ControlTank] 方法3 - 完成，类别:%d 存活:%d", GetEntProp(client, Prop_Send, "m_zombieClass"), IsPlayerAlive(client));
+    return Plugin_Stop;
+}
+
+// ==================== 测试方法4：L4D_ReplaceTank ====================
+public Action Command_Test4(int client, int args)
+{
+    if (client == 0) return Plugin_Handled;
+    if (!IsClientInGame(client)) return Plugin_Handled;
+
+    ReplyToCommand(client, "[寄寄之家-ControlTank] ========== 方法4：L4D_ReplaceTank ==========");
+
+    int tankBot = FindTankBot();
+    if (tankBot <= 0)
+    {
+        ReplyToCommand(client, "[寄寄之家-ControlTank] ✗ 未找到 Tank bot，请先用 sm_test3 生成");
+        return Plugin_Handled;
+    }
+
+    ReplyToCommand(client, "[寄寄之家-ControlTank] 使用 L4D_ReplaceTank 替换...");
+    L4D_ReplaceTank(tankBot, client);
+
+    SetEntProp(client, Prop_Send, "m_iHealth", 4000);
+    SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
+
+    PrintToServer("[寄寄之家-ControlTank] 方法4 - 完成，类别:%d 存活:%d", GetEntProp(client, Prop_Send, "m_zombieClass"), IsPlayerAlive(client));
+    return Plugin_Handled;
+}
+
+// ==================== 测试方法5：L4D_ReplaceWithBot + 接管 ====================
+public Action Command_Test5(int client, int args)
+{
+    if (client == 0) return Plugin_Handled;
+    if (!IsClientInGame(client)) return Plugin_Handled;
+
+    ReplyToCommand(client, "[寄寄之家-ControlTank] ========== 方法5：L4D_ReplaceWithBot + 接管 ==========");
+
+    ReplyToCommand(client, "[寄寄之家-ControlTank] 替换为 bot...");
+    L4D_ReplaceWithBot(client, true);
+
+    CreateTimer(0.5, Timer_Test5_Convert, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+    return Plugin_Handled;
+}
+
+public Action Timer_Test5_Convert(Handle timer, int userid)
+{
+    int client = GetClientOfUserId(userid);
+    if (!IsClientInGame(client)) return Plugin_Stop;
+
+    int tankBot = FindTankBot();
+    if (tankBot <= 0)
+    {
+        ReplyToCommand(client, "[寄寄之家-ControlTank] ✗ 未找到 Tank bot，先生成...");
+        ServerCommand("z_spawn tank auto");
+        CreateTimer(1.0, Timer_Test5_Takeover, userid, TIMER_FLAG_NO_MAPCHANGE);
+        return Plugin_Stop;
+    }
+
+    PrintToServer("[寄寄之家-ControlTank] 方法5 - 找到 Tank bot: %d", tankBot);
+    CreateTimer(0.1, Timer_Test5_Takeover, userid, TIMER_FLAG_NO_MAPCHANGE);
+    return Plugin_Stop;
+}
+
+public Action Timer_Test5_Takeover(Handle timer, int userid)
+{
+    int client = GetClientOfUserId(userid);
+    if (!IsClientInGame(client)) return Plugin_Stop;
+
+    int tankBot = FindTankBot();
+    if (tankBot <= 0)
+    {
+        ReplyToCommand(client, "[寄寄之家-ControlTank] ✗ 未找到 Tank bot");
+        return Plugin_Stop;
+    }
+
+    PrintToServer("[寄寄之家-ControlTank] 方法5 - 切换队伍");
+    ChangeClientTeam(client, 3);
+
+    PrintToServer("[寄寄之家-ControlTank] 方法5 - 接管 Tank bot");
+    L4D_TakeOverZombieBot(client, tankBot);
+
+    SetEntProp(client, Prop_Send, "m_iHealth", 4000);
+    SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
+
+    PrintToServer("[寄寄之家-ControlTank] 方法5 - 完成，类别:%d 存活:%d", GetEntProp(client, Prop_Send, "m_zombieClass"), IsPlayerAlive(client));
+    return Plugin_Stop;
+}
+
+// ==================== 测试方法6：复活后设置类别 ====================
+public Action Command_Test6(int client, int args)
+{
+    if (client == 0) return Plugin_Handled;
+    if (!IsClientInGame(client)) return Plugin_Handled;
+
+    ReplyToCommand(client, "[寄寄之家-ControlTank] ========== 方法6：复活后设置类别 ==========");
+
+    float vPos[3], vAng[3];
+    GetClientAbsOrigin(client, vPos);
+    GetClientAbsAngles(client, vAng);
+
+    ReplyToCommand(client, "[寄寄之家-ControlTank] 杀死玩家...");
+    ForcePlayerSuicide(client);
+
+    DataPack data = new DataPack();
+    data.WriteCell(GetClientUserId(client));
+    data.WriteFloat(vPos[0]);
+    data.WriteFloat(vPos[1]);
+    data.WriteFloat(vPos[2]);
+    data.WriteFloat(vAng[0]);
+    data.WriteFloat(vAng[1]);
+    data.WriteFloat(vAng[2]);
+
+    CreateTimer(1.0, Timer_Test6_Convert, data, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
+    return Plugin_Handled;
+}
+
+public Action Timer_Test6_Convert(Handle timer, DataPack data)
+{
+    data.Reset();
+    int userid = data.ReadCell();
+    float vPos[3], vAng[3];
+    vPos[0] = data.ReadFloat(); vPos[1] = data.ReadFloat(); vPos[2] = data.ReadFloat();
+    vAng[0] = data.ReadFloat(); vAng[1] = data.ReadFloat(); vAng[2] = data.ReadFloat();
+
+    int client = GetClientOfUserId(userid);
+    if (!IsClientInGame(client)) return Plugin_Stop;
+
+    PrintToServer("[寄寄之家-ControlTank] 方法6 - 步骤1：复活");
+    L4D_RespawnPlayer(client);
+
+    PrintToServer("[寄寄之家-ControlTank] 方法6 - 步骤2：切换队伍");
+    ChangeClientTeam(client, 3);
+
+    PrintToServer("[寄寄之家-ControlTank] 方法6 - 步骤3：设置类别");
+    L4D_SetClass(client, 8);
+
+    vPos[2] += 50.0;
+    PrintToServer("[寄寄之家-ControlTank] 方法6 - 步骤4：传送");
+    TeleportEntity(client, vPos, vAng, NULL_VECTOR);
+
+    PrintToServer("[寄寄之家-ControlTank] 方法6 - 步骤5：实体化");
+    L4D_BecomeGhost(client);
+    L4D_MaterializeFromGhost(client);
+
+    SetEntProp(client, Prop_Send, "m_iHealth", 4000);
+    SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
+
+    PrintToServer("[寄寄之家-ControlTank] 方法6 - 完成，类别:%d 存活:%d", GetEntProp(client, Prop_Send, "m_zombieClass"), IsPlayerAlive(client));
+    return Plugin_Stop;
 }
 
 // 检查是否是合作模式
