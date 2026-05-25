@@ -16,6 +16,7 @@ public Plugin myinfo =
 };
 
 ConVar g_cvarEnabled;
+ConVar g_cvarTankHP;
 bool g_bTankSpawning = false;
 int g_iCurrentTank = -1;
 
@@ -31,8 +32,20 @@ public void OnPluginStart()
         true, 1.0
     );
 
+    g_cvarTankHP = CreateConVar(
+        "shan_controltank_hp",
+        "4000",
+        "Tank血量设置",
+        FCVAR_NOTIFY,
+        true, 1.0,
+        true, 120000.0
+    );
+
     // 自动生成配置文件
     AutoExecConfig(true, "controltank");
+
+    // 钩住血量ConVar变化
+    HookConVarChange(g_cvarTankHP, OnTankHPChanged);
 
     // 钩住Tank生成事件
     HookEvent("tank_spawn", Event_TankSpawn);
@@ -47,10 +60,37 @@ public void OnPluginStart()
     PrintToServer("[寄寄之家-ControlTank] 插件已加载!");
 }
 
+// 当Tank血量配置改变时
+public void OnTankHPChanged(ConVar convar, const char[] oldValue, const char[] newValue)
+{
+    int newHP = StringToInt(newValue);
+    if (newHP > 0)
+    {
+        ConVar zTankHP = FindConVar("z_tank_health");
+        if (zTankHP != null)
+        {
+            zTankHP.SetInt(newHP);
+            PrintToServer("[寄寄之家-ControlTank] Tank血量配置已更新为: %d", newHP);
+        }
+    }
+}
+
 public void OnMapStart()
 {
     g_bTankSpawning = false;
     g_iCurrentTank = -1;
+
+    // 设置Tank默认血量
+    int tankHP = g_cvarTankHP.IntValue;
+    if (tankHP > 0)
+    {
+        ConVar zTankHP = FindConVar("z_tank_health");
+        if (zTankHP != null)
+        {
+            zTankHP.SetInt(tankHP);
+            PrintToServer("[寄寄之家-ControlTank] 已设置Tank默认血量为: %d", tankHP);
+        }
+    }
 }
 
 public void OnMapEnd()
@@ -299,12 +339,54 @@ public Action Timer_TakeoverExistingTank(Handle timer, DataPack data)
     PrintToServer("[寄寄之家-ControlTank] 步骤2：切换到感染者队伍");
     ChangeClientTeam(client, 3);
 
+    // 等待队伍切换完成后接管
+    CreateTimer(0.2, Timer_TakeoverExistingTank_Phase2, data, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
+    return Plugin_Stop;
+}
+
+public Action Timer_TakeoverExistingTank_Phase2(Handle timer, DataPack data)
+{
+    data.Reset();
+    int userid = data.ReadCell();
+    int tankBot = data.ReadCell();
+
+    int client = GetClientOfUserId(userid);
+    if (!IsClientInGame(client))
+    {
+        g_iCurrentTank = -1;
+        return Plugin_Stop;
+    }
+
+    // 再次验证AI Tank
+    if (!IsClientInGame(tankBot) || !IsFakeClient(tankBot) || !IsPlayerAlive(tankBot))
+    {
+        tankBot = FindTankBot();
+        if (tankBot <= 0)
+        {
+            PrintToServer("[寄寄之家-ControlTank] 未找到可用的Tank，转换失败");
+            g_iCurrentTank = -1;
+            return Plugin_Stop;
+        }
+    }
+
     PrintToServer("[寄寄之家-ControlTank] 步骤3：接管AI Tank (索引: %d)", tankBot);
     L4D_TakeOverZombieBot(client, tankBot);
 
-    PrintToServer("[寄寄之家-ControlTank] 步骤4：设置血量");
-    SetEntProp(client, Prop_Send, "m_iHealth", 4000);
-    SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
+    // 等待接管完成后设置血量
+    CreateTimer(0.1, Timer_TakeoverExistingTank_Finalize, userid, TIMER_FLAG_NO_MAPCHANGE);
+    return Plugin_Stop;
+}
+
+public Action Timer_TakeoverExistingTank_Finalize(Handle timer, int userid)
+{
+    int client = GetClientOfUserId(userid);
+    if (!IsClientInGame(client))
+    {
+        g_iCurrentTank = -1;
+        return Plugin_Stop;
+    }
+
+    // Tank血量已在生成时通过 z_tank_health 设置，无需手动设置
 
     PrintToServer("[寄寄之家-ControlTank] 转换完成！当前类别: %d, 存活: %d", GetEntProp(client, Prop_Send, "m_zombieClass"), IsPlayerAlive(client));
 
@@ -405,7 +487,7 @@ public Action Timer_Test2_Takeover(Handle timer, DataPack data)
     data.Reset();
     int userid = data.ReadCell();
     int tankBot = data.ReadCell();
-    int needSpawn = data.ReadCell();  // 读取是否刚生成的标记
+    int needSpawn = data.ReadCell();
     float vPos[3], vAng[3];
     vPos[0] = data.ReadFloat(); vPos[1] = data.ReadFloat(); vPos[2] = data.ReadFloat();
     vAng[0] = data.ReadFloat(); vAng[1] = data.ReadFloat(); vAng[2] = data.ReadFloat();
@@ -420,14 +502,45 @@ public Action Timer_Test2_Takeover(Handle timer, DataPack data)
         return Plugin_Stop;
     }
 
-    PrintToServer("[寄寄之家-ControlTank] 切换到感染者队伍");
+    PrintToServer("[寄寄之家-ControlTank] 步骤1：切换到感染者队伍");
     ChangeClientTeam(client, 3);
 
-    PrintToServer("[寄寄之家-ControlTank] 接管 AI Tank (索引: %d)", tankBot);
+    // 等待队伍切换完成
+    CreateTimer(0.2, Timer_Test2_TakeoverPhase2, data, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
+    return Plugin_Stop;
+}
+
+public Action Timer_Test2_TakeoverPhase2(Handle timer, DataPack data)
+{
+    data.Reset();
+    int userid = data.ReadCell();
+    int tankBot = data.ReadCell();
+    int needSpawn = data.ReadCell();
+
+    int client = GetClientOfUserId(userid);
+    if (!IsClientInGame(client)) return Plugin_Stop;
+
+    // 再次验证AI Tank
+    if (!IsClientInGame(tankBot) || !IsFakeClient(tankBot) || !IsPlayerAlive(tankBot))
+    {
+        ReplyToCommand(client, "[寄寄之家-ControlTank] ✗ AI Tank不再有效");
+        return Plugin_Stop;
+    }
+
+    PrintToServer("[寄寄之家-ControlTank] 步骤2：接管 AI Tank (索引: %d)", tankBot);
     L4D_TakeOverZombieBot(client, tankBot);
 
-    SetEntProp(client, Prop_Send, "m_iHealth", 4000);
-    SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
+    // 等待接管完成后设置属性
+    CreateTimer(0.1, Timer_Test2_Finalize, userid, TIMER_FLAG_NO_MAPCHANGE);
+    return Plugin_Stop;
+}
+
+public Action Timer_Test2_Finalize(Handle timer, int userid)
+{
+    int client = GetClientOfUserId(userid);
+    if (!IsClientInGame(client)) return Plugin_Stop;
+
+    // Tank血量已在生成时通过 z_tank_health 设置，无需手动设置
 
     PrintToServer("[寄寄之家-ControlTank] 转换完成，类别:%d 存活:%d", GetEntProp(client, Prop_Send, "m_zombieClass"), IsPlayerAlive(client));
     ReplyToCommand(client, "[寄寄之家-ControlTank] ✓ 转换完成！当前类别: %d, 存活: %d", GetEntProp(client, Prop_Send, "m_zombieClass"), IsPlayerAlive(client));
