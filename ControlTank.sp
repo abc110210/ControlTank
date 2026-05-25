@@ -279,11 +279,20 @@ void TransformPlayerToTank(int client)
 
     // 步骤2：等待后使用 z_spawn 生成 Tank
     PrintToServer("[寄寄之家-ControlTank] 步骤2：准备生成 Tank");
-    CreateTimer(0.3, Timer_SpawnAndTakeover, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+
+    // 创建 DataPack 传递数据
+    DataPack data = new DataPack();
+    data.WriteCell(GetClientUserId(client));
+    data.WriteCell(timeSeconds);
+    CreateTimer(0.3, Timer_SpawnAndTakeover, data, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
 }
 
-public Action Timer_SpawnAndTakeover(Handle timer, int userid)
+public Action Timer_SpawnAndTakeover(Handle timer, DataPack data)
 {
+    data.Reset();
+    int userid = data.ReadCell();
+    int timeSeconds = data.ReadCell();
+
     int client = GetClientOfUserId(userid);
 
     if (!IsClientInGame(client))
@@ -297,8 +306,11 @@ public Action Timer_SpawnAndTakeover(Handle timer, int userid)
     // 使用 z_spawn 命令生成 Tank（这样生成的 bot 更容易被接管）
     ServerCommand("z_spawn tank auto");
 
-    // 等待 Tank 生成后接管
-    CreateTimer(1.0, Timer_TakeoverTank, userid, TIMER_FLAG_NO_MAPCHANGE);
+    // 等待 Tank 生成后接管，创建新的 DataPack
+    DataPack takeoverData = new DataPack();
+    takeoverData.WriteCell(userid);
+    takeoverData.WriteCell(timeSeconds);
+    CreateTimer(1.0, Timer_TakeoverTank, takeoverData, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
 
     return Plugin_Stop;
 }
