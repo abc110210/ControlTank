@@ -271,26 +271,38 @@ void TransformPlayerToTank(int client)
         }
     }
 
-    PrintToServer("[寄寄之家-ControlTank] 开始生成 Tank bot...");
+    PrintToServer("[寄寄之家-ControlTank] 开始直接转换玩家为 Tank...");
 
-    // 使用 left4dhooks 直接生成 Tank
-    int tank = L4D2_SpawnTank(NULL_VECTOR, NULL_VECTOR);
+    // 保存玩家当前位置
+    float vPos[3], vAng[3];
+    GetClientAbsOrigin(client, vPos);
+    GetClientAbsAngles(client, vAng);
 
-    PrintToServer("[寄寄之家-ControlTank] L4D2_SpawnTank 返回: %d", tank);
+    // 直接将玩家转换成 Tank
+    ChangeClientTeam(client, 3);           // 切换到感染者队伍
+    SetEntProp(client, Prop_Send, "m_zombieClass", 8);  // 设置为 Tank 类别
 
-    if (tank > 0)
+    // 传送到原位置
+    TeleportEntity(client, vPos, vAng, NULL_VECTOR);
+
+    // 设置 Tank 血量
+    SetEntProp(client, Prop_Send, "m_iHealth", 4000);
+    SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
+
+    // 从 ghost 状态实体化
+    L4D_MaterializeFromGhost(client);
+
+    PrintToServer("[寄寄之家-ControlTank] 转换完成");
+
+    // 显示控制时间信息
+    if (timeSeconds > 0)
     {
-        // 等待一小段时间让 Tank 完全生成
-        DataPack data = new DataPack();
-        data.WriteCell(GetClientUserId(client));
-        data.WriteCell(timeSeconds);
-        CreateTimer(0.5, Timer_TakeoverTank, data, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
+        PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01你有 \x04%d \x01秒的Tank控制时间！", timeSeconds);
+        g_hTankTimer = CreateTimer(float(timeSeconds), Timer_TankTimeExpired, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
     }
     else
     {
-        PrintToServer("[寄寄之家-ControlTank] 错误：L4D2_SpawnTank 失败");
-        PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01生成 Tank 失败，请稍后重试");
-        g_iCurrentTank = -1;
+        PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01你有 \x04无限制\x01 的Tank控制时间!");
     }
 }
 
