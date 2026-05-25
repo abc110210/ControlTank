@@ -319,36 +319,62 @@ public Action Timer_ConvertToTank(Handle timer, DataPack data)
         return Plugin_Stop;
     }
 
-    PrintToServer("[寄寄之家-ControlTank] 步骤2：切换到感染者队伍");
+    PrintToServer("[寄寄之家-ControlTank] 步骤2：等待玩家完全死亡");
+
+    // 等待更长时间确保玩家完全死亡
+    CreateTimer(0.5, Timer_ConvertStep2, data, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
+
+    return Plugin_Stop;
+}
+
+public Action Timer_ConvertStep2(Handle timer, DataPack data)
+{
+    data.Reset();
+    int userid = data.ReadCell();
+    int timeSeconds = data.ReadCell();
+    float vPos[3], vAng[3];
+    vPos[0] = data.ReadFloat();
+    vPos[1] = data.ReadFloat();
+    vPos[2] = data.ReadFloat();
+    vAng[0] = data.ReadFloat();
+    vAng[1] = data.ReadFloat();
+    vAng[2] = data.ReadFloat();
+
+    int client = GetClientOfUserId(userid);
+
+    if (!IsClientInGame(client))
+    {
+        g_iCurrentTank = -1;
+        return Plugin_Stop;
+    }
+
+    PrintToServer("[寄寄之家-ControlTank] 步骤3：切换到感染者队伍");
 
     // 切换到感染者队伍
     ChangeClientTeam(client, 3);
 
-    // 使用 L4D_SetClass 设置为 Tank 类别（而不是 SetEntProp）
-    PrintToServer("[寄寄之家-ControlTank] 步骤3：使用 L4D_SetClass 设置为 Tank");
+    // 使用 L4D_SetClass 设置为 Tank 类别
+    PrintToServer("[寄寄之家-ControlTank] 步骤4：使用 L4D_SetClass 设置为 Tank");
     L4D_SetClass(client, 8);
 
-    // 传送回原位置
-    PrintToServer("[寄寄之家-ControlTank] 步骤4：传送到原位置");
+    // 稍微抬高 Z 轴位置避免卡地下
+    vPos[2] += 50.0;
+
+    // 传送到位置
+    PrintToServer("[寄寄之家-ControlTank] 步骤5：传送到位置");
     TeleportEntity(client, vPos, vAng, NULL_VECTOR);
 
+    // 复活玩家（在 ghost 和实体化之前）
+    PrintToServer("[寄寄之家-ControlTank] 步骤6：复活玩家");
+    L4D_RespawnPlayer(client);
+
     // 设置为 ghost 状态然后实体化
-    PrintToServer("[寄寄之家-ControlTank] 步骤5：实体化");
+    PrintToServer("[寄寄之家-ControlTank] 步骤7：实体化");
     L4D_BecomeGhost(client);
     L4D_MaterializeFromGhost(client);
 
     // 设置 Tank 血量
-    PrintToServer("[寄寄之家-ControlTank] 步骤6：设置血量");
-    SetEntProp(client, Prop_Send, "m_iHealth", 4000);
-    SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
-
-    // 复活玩家
-    PrintToServer("[寄寄之家-ControlTank] 步骤7：复活玩家");
-    L4D_RespawnPlayer(client);
-
-    // 再次设置类别和血量，确保没有被重置
-    PrintToServer("[寄寄之家-ControlTank] 步骤8：再次设置类别和血量");
-    L4D_SetClass(client, 8);
+    PrintToServer("[寄寄之家-ControlTank] 步骤8：设置血量");
     SetEntProp(client, Prop_Send, "m_iHealth", 4000);
     SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
 
