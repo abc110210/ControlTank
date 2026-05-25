@@ -76,21 +76,13 @@ public Action L4D_OnSetTankFrustration(int tank, int &frustration)
 {
     if (tank > 0 && tank <= MaxClients && IsClientInGame(tank))
     {
-        // 只处理玩家控制的Tank
         if (!IsFakeClient(tank))
         {
             int frustrationTime = g_cvarTankFrustrationTime.IntValue;
 
             if (frustrationTime == 0)
             {
-                // 0 = 关闭挫折度系统，永久控制
-                PrintToServer("[ControlTank] 拦截挫折度: %d → 0 (玩家 %N)", frustration, tank);
                 frustration = 0;
-            }
-            else
-            {
-                // 1 = 开启挫折度系统，使用游戏默认值
-                PrintToServer("[ControlTank] 允许挫折度: %d (玩家 %N)", frustration, tank);
             }
         }
     }
@@ -122,24 +114,20 @@ public void Event_PlayerBotReplace(Event event, const char[] name, bool dontBroa
     int player = GetClientOfUserId(event.GetInt("player"));
     int bot = GetClientOfUserId(event.GetInt("bot"));
 
-    char playerName[MAX_NAME_LENGTH];
-    GetClientName(player, playerName, sizeof(playerName));
-    PrintToServer("[ControlTank] 玩家 %N 被 bot 替换 (当前Tank: %N)", player, g_iCurrentTank);
+    PrintToServer("[ControlTank] player_bot_replace 事件 - 玩家: %N, Bot: %N, 当前Tank: %N", player, bot, g_iCurrentTank);
 
     // 当玩家被bot替换时（玩家失去Tank控制权）
     if (player == g_iCurrentTank)
     {
         g_iCurrentTank = -1;
-        PrintToServer("[ControlTank] 当前Tank玩家失去控制权，将玩家移回幸存者阵营");
 
         // 将玩家放回幸存者阵营（死亡状态，可被复活）
         if (IsClientInGame(player))
         {
-            PrintToServer("[ControlTank] 步骤1: 切换 %N 到幸存者队伍", playerName);
-            // 先切换到幸存者队伍
+            PrintToServer("[ControlTank] 执行 ChangeClientTeam(%N, 2)", player);
             ChangeClientTeam(player, 2);
 
-            // 等待队伍切换完成后，检查并确保玩家处于死亡状态
+            PrintToServer("[ControlTank] 创建定时器检查玩家状态");
             CreateTimer(0.1, Timer_EnsurePlayerDead, GetClientUserId(player), TIMER_FLAG_NO_MAPCHANGE);
         }
     }
@@ -149,11 +137,11 @@ public Action Timer_EnsurePlayerDead(Handle timer, int userid)
 {
     int player = GetClientOfUserId(userid);
 
-    PrintToServer("[ControlTank] Timer_EnsurePlayerDead 触发 (玩家 %N)", player);
+    PrintToServer("[ControlTank] Timer_EnsurePlayerDead 触发 - 玩家: %N", player);
 
     if (!IsClientInGame(player))
     {
-        PrintToServer("[ControlTank] 玩家不在游戏中");
+        PrintToServer("[ControlTank] 玩家不在游戏中，中止");
         return Plugin_Stop;
     }
 
@@ -164,14 +152,16 @@ public Action Timer_EnsurePlayerDead(Handle timer, int userid)
     // 如果玩家在幸存者队伍但还活着，杀死他
     if (team == 2 && alive)
     {
-        PrintToServer("[ControlTank] 执行: ForcePlayerSuicide");
+        PrintToServer("[ControlTank] 执行 ForcePlayerSuicide");
         ForcePlayerSuicide(player);
+        PrintToServer("[ControlTank] ForcePlayerSuicide 完成");
     }
     else
     {
         PrintToServer("[ControlTank] 跳过 - 队伍: %d, 存活: %d", team, alive);
     }
 
+    PrintToServer("[ControlTank] 处理完成");
     return Plugin_Stop;
 }
 
@@ -571,8 +561,6 @@ public Action Timer_Test2_Finalize(Handle timer, int userid)
 
 void ApplyTankSettings(int client)
 {
-    PrintToServer("[ControlTank] ApplyTankSettings 调用 (玩家 %N)", client);
-
     // 设置Tank血量（如果需要）
     int tankHP = g_cvarTankHP.IntValue;
     if (tankHP > 0)
@@ -586,9 +574,7 @@ void ApplyTankSettings(int client)
     }
 
     // 设置初始挫折度为0
-    int frustrationTime = g_cvarTankFrustrationTime.IntValue;
     SetEntProp(client, Prop_Send, "m_frustration", 0);
-    PrintToServer("[ControlTank] 设置初始挫折度为0 (配置: %d)", frustrationTime);
 }
 
 bool IsCoopMode()
