@@ -687,11 +687,16 @@ public Action Command_TankSpawn(int client, int args)
 
     ReplyToCommand(client, "[寄寄之家-ControlTank] 正在生成 Tank...");
 
-    // 方法1：使用 z_spawn 命令
-    ServerCommand("z_spawn tank auto");
+    // 方法1：使用 left4dhooks 的 L4D2_SpawnTank
+    float playerPos[3];
+    GetClientAbsOrigin(client, playerPos);
+
+    int tank = L4D2_SpawnTank(playerPos, NULL_VECTOR);
+
+    ReplyToCommand(client, "[寄寄之家-ControlTank] L4D2_SpawnTank 返回: %d", tank);
 
     // 等待后检查
-    CreateTimer(1.0, Timer_CheckTankSpawn, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+    CreateTimer(0.5, Timer_CheckTankSpawn, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 
     return Plugin_Handled;
 }
