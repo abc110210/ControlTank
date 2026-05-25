@@ -15,15 +15,6 @@ public Plugin myinfo =
     url = ""
 };
 
-public Plugin myinfo =
-{
-    name = "Control Tank",
-    author = "Shan",
-    description = "在合作战役模式中，Tank出现时随机选择一名玩家变成Tank",
-    version = "1.0.0",
-    url = ""
-};
-
 ConVar g_cvarEnabled;
 ConVar g_cvarTankHP;
 ConVar g_cvarTankFrustrationTime;
