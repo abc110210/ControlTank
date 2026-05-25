@@ -332,13 +332,16 @@ public Action Timer_ConvertToTank(Handle timer, DataPack data)
     newData.WriteFloat(vAng[2]);
 
     // 等待更长时间确保玩家完全死亡
-    CreateTimer(0.5, Timer_ConvertStep2, newData, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
+    PrintToServer("[寄寄之家-ControlTank] 创建定时器，延迟 1.0 秒");
+    CreateTimer(1.0, Timer_ConvertStep2, newData, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
 
     return Plugin_Stop;
 }
 
 public Action Timer_ConvertStep2(Handle timer, DataPack data)
 {
+    PrintToServer("[寄寄之家-ControlTank] Timer_ConvertStep2 被调用");
+
     data.Reset();
     int userid = data.ReadCell();
     int timeSeconds = data.ReadCell();
