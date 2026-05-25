@@ -16,9 +16,7 @@ public Plugin myinfo =
 };
 
 ConVar g_cvarEnabled;
-ConVar g_cvarTime;
 bool g_bTankSpawning = false;
-Handle g_hTankTimer = null;
 int g_iCurrentTank = -1;
 
 public void OnPluginStart()
@@ -31,15 +29,6 @@ public void OnPluginStart()
         FCVAR_NOTIFY,
         true, 0.0,
         true, 1.0
-    );
-
-    g_cvarTime = CreateConVar(
-        "shan_controltank_time",
-        "0",
-        "Tank控制权时间（单位：秒，设置为0时无限制）",
-        FCVAR_NOTIFY,
-        true, 0.0,
-        true, 9999.0
     );
 
     // 自动生成配置文件
@@ -68,21 +57,11 @@ public void OnMapStart()
 
 public void OnMapEnd()
 {
-    if (g_hTankTimer != null)
-    {
-        delete g_hTankTimer;
-        g_hTankTimer = null;
-    }
     g_iCurrentTank = -1;
 }
 
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
-    if (g_hTankTimer != null)
-    {
-        delete g_hTankTimer;
-        g_hTankTimer = null;
-    }
     g_iCurrentTank = -1;
     g_bTankSpawning = false;
 }
@@ -93,11 +72,6 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
 
     if (client == g_iCurrentTank)
     {
-        if (g_hTankTimer != null)
-        {
-            delete g_hTankTimer;
-            g_hTankTimer = null;
-        }
         g_iCurrentTank = -1;
     }
 }
@@ -244,32 +218,8 @@ void TransformPlayerToTank(int client)
     if (!IsClientInGame(client))
         return;
 
-    // 清理之前的定时器
-    if (g_hTankTimer != null)
-    {
-        delete g_hTankTimer;
-        g_hTankTimer = null;
-    }
-
     // 记录当前Tank玩家
     g_iCurrentTank = client;
-
-    // 获取控制权时间
-    int timeSeconds = g_cvarTime.IntValue;
-
-    // 覆盖原版沮丧值系统
-    ConVar frustrationCvar = FindConVar("z_frustration_lifetime");
-    if (frustrationCvar != null)
-    {
-        if (timeSeconds > 0)
-        {
-            frustrationCvar.SetInt(timeSeconds);
-        }
-        else
-        {
-            frustrationCvar.SetInt(0);
-        }
-    }
 
     PrintToServer("[寄寄之家-ControlTank] 开始直接转换方法");
 
@@ -281,7 +231,6 @@ void TransformPlayerToTank(int client)
     // 准备数据包
     DataPack data = new DataPack();
     data.WriteCell(GetClientUserId(client));
-    data.WriteCell(timeSeconds);
     data.WriteFloat(vPos[0]);
     data.WriteFloat(vPos[1]);
     data.WriteFloat(vPos[2]);
@@ -293,15 +242,17 @@ void TransformPlayerToTank(int client)
     PrintToServer("[寄寄之家-ControlTank] 步骤1：杀死玩家");
     ForcePlayerSuicide(client);
 
-    // 步骤2：等待后转换
-    CreateTimer(0.2, Timer_ConvertToTank, data, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
+    // 步骤2：等待后直接转换（单一定时器完成所有操作）
+    PrintToServer("[寄寄之家-ControlTank] 创建定时器，延迟 1.0 秒后转换");
+    CreateTimer(1.0, Timer_ConvertToTank, data, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
 }
 
 public Action Timer_ConvertToTank(Handle timer, DataPack data)
 {
+    PrintToServer("[寄寄之家-ControlTank] Timer_ConvertToTank 被调用");
+
     data.Reset();
     int userid = data.ReadCell();
-    int timeSeconds = data.ReadCell();
     float vPos[3], vAng[3];
     vPos[0] = data.ReadFloat();
     vPos[1] = data.ReadFloat();
@@ -314,395 +265,43 @@ public Action Timer_ConvertToTank(Handle timer, DataPack data)
 
     if (!IsClientInGame(client))
     {
+        PrintToServer("[寄寄之家-ControlTank] 玩家不在游戏中，中止转换");
         g_iCurrentTank = -1;
         return Plugin_Stop;
     }
 
-    PrintToServer("[寄寄之家-ControlTank] 步骤2：等待玩家完全死亡");
+    PrintToServer("[寄寄之家-ControlTank] 步骤2：玩家已死亡，开始转换流程");
 
-    // 创建新的 DataPack 传递给下一个定时器
-    DataPack newData = new DataPack();
-    newData.WriteCell(userid);
-    newData.WriteCell(timeSeconds);
-    newData.WriteFloat(vPos[0]);
-    newData.WriteFloat(vPos[1]);
-    newData.WriteFloat(vPos[2]);
-    newData.WriteFloat(vAng[0]);
-    newData.WriteFloat(vAng[1]);
-    newData.WriteFloat(vAng[2]);
-
-    // 等待更长时间确保玩家完全死亡
-    PrintToServer("[寄寄之家-ControlTank] 创建定时器，延迟 1.0 秒");
-    CreateTimer(1.0, Timer_ConvertStep2, newData, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
-
-    return Plugin_Stop;
-}
-
-public Action Timer_ConvertStep2(Handle timer, DataPack data)
-{
-    PrintToServer("[寄寄之家-ControlTank] Timer_ConvertStep2 被调用");
-
-    data.Reset();
-    int userid = data.ReadCell();
-    int timeSeconds = data.ReadCell();
-    float vPos[3], vAng[3];
-    vPos[0] = data.ReadFloat();
-    vPos[1] = data.ReadFloat();
-    vPos[2] = data.ReadFloat();
-    vAng[0] = data.ReadFloat();
-    vAng[1] = data.ReadFloat();
-    vAng[2] = data.ReadFloat();
-
-    int client = GetClientOfUserId(userid);
-
-    if (!IsClientInGame(client))
-    {
-        g_iCurrentTank = -1;
-        return Plugin_Stop;
-    }
-
+    // 步骤3：切换到感染者队伍
     PrintToServer("[寄寄之家-ControlTank] 步骤3：切换到感染者队伍");
-
-    // 切换到感染者队伍
     ChangeClientTeam(client, 3);
 
-    // 使用 L4D_SetClass 设置为 Tank 类别
+    // 步骤4：使用 L4D_SetClass 设置为 Tank 类别
     PrintToServer("[寄寄之家-ControlTank] 步骤4：使用 L4D_SetClass 设置为 Tank");
     L4D_SetClass(client, 8);
 
-    // 稍微抬高 Z 轴位置避免卡地下
+    // 步骤5：稍微抬高 Z 轴位置避免卡地下
     vPos[2] += 50.0;
+    PrintToServer("[寄寄之家-ControlTank] 步骤5：传送到位置 (%.2f, %.2f, %.2f)", vPos[0], vPos[1], vPos[2]);
 
-    // 传送到位置
-    PrintToServer("[寄寄之家-ControlTank] 步骤5：传送到位置");
-    TeleportEntity(client, vPos, vAng, NULL_VECTOR);
-
-    // 复活玩家（在 ghost 和实体化之前）
+    // 步骤6：复活玩家（在 ghost 和实体化之前）
     PrintToServer("[寄寄之家-ControlTank] 步骤6：复活玩家");
     L4D_RespawnPlayer(client);
 
-    // 设置为 ghost 状态然后实体化
+    // 步骤7：传送到位置
+    TeleportEntity(client, vPos, vAng, NULL_VECTOR);
+
+    // 步骤8：设置为 ghost 状态然后实体化
     PrintToServer("[寄寄之家-ControlTank] 步骤7：实体化");
     L4D_BecomeGhost(client);
     L4D_MaterializeFromGhost(client);
 
-    // 设置 Tank 血量
+    // 步骤9：设置 Tank 血量
     PrintToServer("[寄寄之家-ControlTank] 步骤8：设置血量");
     SetEntProp(client, Prop_Send, "m_iHealth", 4000);
     SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
 
-    PrintToServer("[寄寄之家-ControlTank] 转换完成，当前类别: %d", GetEntProp(client, Prop_Send, "m_zombieClass"));
-
-    // 显示控制时间信息
-    if (timeSeconds > 0)
-    {
-        PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01你有 \x04%d \x01秒的Tank控制时间！", timeSeconds);
-        g_hTankTimer = CreateTimer(float(timeSeconds), Timer_TankTimeExpired, userid, TIMER_FLAG_NO_MAPCHANGE);
-    }
-    else
-    {
-        PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01你有 \x04无限制\x01 的Tank控制时间!");
-    }
-
-    return Plugin_Stop;
-}
-
-public Action Timer_SpawnAndTakeover(Handle timer, DataPack data)
-{
-    data.Reset();
-    int userid = data.ReadCell();
-    int timeSeconds = data.ReadCell();
-
-    int client = GetClientOfUserId(userid);
-
-    if (!IsClientInGame(client))
-    {
-        g_iCurrentTank = -1;
-        return Plugin_Stop;
-    }
-
-    PrintToServer("[寄寄之家-ControlTank] 步骤3：使用 z_spawn 生成 Tank");
-
-    // 使用 z_spawn 命令生成 Tank（这样生成的 bot 更容易被接管）
-    ServerCommand("z_spawn tank auto");
-
-    // 等待 Tank 生成后接管，创建新的 DataPack
-    DataPack takeoverData = new DataPack();
-    takeoverData.WriteCell(userid);
-    takeoverData.WriteCell(timeSeconds);
-    CreateTimer(1.0, Timer_TakeoverTank, takeoverData, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
-
-    return Plugin_Stop;
-}
-
-public Action Timer_TakeoverTank(Handle timer, DataPack data)
-{
-    data.Reset();
-    int userid = data.ReadCell();
-    int timeSeconds = data.ReadCell();
-
-    int client = GetClientOfUserId(userid);
-
-    if (!IsClientInGame(client))
-    {
-        g_iCurrentTank = -1;
-        return Plugin_Stop;
-    }
-
-    PrintToServer("[寄寄之家-ControlTank] 开始查找 Tank bot...");
-
-    // 查找AI Tank bot
-    int tankBot = FindTankBot();
-
-    PrintToServer("[寄寄之家-ControlTank] FindTankBot 返回: %d", tankBot);
-
-    if (tankBot > 0)
-    {
-        PrintToServer("[寄寄之家-ControlTank] 找到 Tank bot，开始接管流程...");
-
-    // 直接开始接管流程（不使用 L4D_ReplaceWithBot）
-    DataPack takeoverData = new DataPack();
-    takeoverData.WriteCell(userid);
-    takeoverData.WriteCell(timeSeconds);
-    takeoverData.WriteCell(tankBot);  // 保存 Tank bot 的索引
-    CreateTimer(0.1, Timer_TakeoverZombieBot, takeoverData, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
-    }
-    else
-    {
-        PrintToServer("[寄寄之家-ControlTank] 第一次未找到 Tank bot，1秒后重试...");
-        // 重试一次
-        DataPack retryData = new DataPack();
-        retryData.WriteCell(userid);
-        retryData.WriteCell(timeSeconds);
-        retryData.WriteCell(1);  // 重试次数
-        CreateTimer(1.0, Timer_RetryTakeover, retryData, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
-    }
-
-    return Plugin_Stop;
-}
-
-public Action Timer_TakeoverZombieBot(Handle timer, DataPack data)
-{
-    data.Reset();
-    int userid = data.ReadCell();
-    int timeSeconds = data.ReadCell();
-    int tankBot = data.ReadCell();
-
-    int client = GetClientOfUserId(userid);
-
-    if (!IsClientInGame(client))
-    {
-        g_iCurrentTank = -1;
-        return Plugin_Stop;
-    }
-
-    PrintToServer("[寄寄之家-ControlTank] Tank bot: %d, 客户端: %d", tankBot, client);
-
-    // 检查 Tank bot 是否还存活
-    if (!IsClientInGame(tankBot) || !IsPlayerAlive(tankBot))
-    {
-        PrintToServer("[寄寄之家-ControlTank] 错误：Tank bot 已无效");
-        PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01转换失败，Tank bot 已无效");
-        g_iCurrentTank = -1;
-        return Plugin_Stop;
-    }
-
-    PrintToServer("[寄寄之家-ControlTank] 玩家当前队伍: %d, 存活: %d", GetClientTeam(client), IsPlayerAlive(client));
-
-    // 如果玩家还在幸存者队伍，需要先替换
-    if (GetClientTeam(client) == 2)
-    {
-        PrintToServer("[寄寄之家-ControlTank] 玩家在幸存者队伍，执行替换...");
-
-        // 先传送到 Tank 位置
-        float vPos[3], vAng[3];
-        GetClientAbsOrigin(tankBot, vPos);
-        GetClientAbsAngles(tankBot, vAng);
-        TeleportEntity(client, vPos, vAng, NULL_VECTOR);
-
-        // 使用 L4D_ReplaceTank 直接替换
-        PrintToServer("[寄寄之家-ControlTank] 调用 L4D_ReplaceTank(%d, %d)", tankBot, client);
-        L4D_ReplaceTank(tankBot, client);
-    }
-    else if (GetClientTeam(client) == 1)
-    {
-        // 玩家在观察者模式
-        PrintToServer("[寄寄之家-ControlTank] 玩家在观察者模式，切换到感染者队伍...");
-
-        // 切换到感染者队伍
-        ChangeClientTeam(client, 3);
-
-        // 设置为 Tank 类别
-        L4D_SetClass(client, 8);
-
-        // 实体化
-        L4D_MaterializeFromGhost(client);
-
-        // 接管 Tank
-        L4D_TakeOverZombieBot(client, tankBot);
-    }
-    else
-    {
-        // 玩家已经在感染者队伍
-        PrintToServer("[寄寄之家-ControlTank] 玩家在感染者队伍，直接接管...");
-        L4D_TakeOverZombieBot(client, tankBot);
-    }
-
-    // 等待接管完成
-    CreateTimer(0.5, Timer_VerifyTakeover, userid, TIMER_FLAG_NO_MAPCHANGE);
-
-    return Plugin_Stop;
-}
-
-public Action Timer_RetryTakeover(Handle timer, DataPack data)
-{
-    data.Reset();
-    int userid = data.ReadCell();
-    int timeSeconds = data.ReadCell();
-    int retryCount = data.ReadCell();
-
-    int client = GetClientOfUserId(userid);
-
-    if (!IsClientInGame(client))
-    {
-        g_iCurrentTank = -1;
-        return Plugin_Stop;
-    }
-
-    PrintToServer("[寄寄之家-ControlTank] 重试第 %d 次，查找 Tank bot...", retryCount);
-
-    int tankBot = FindTankBot();
-
-    if (tankBot > 0)
-    {
-        PrintToServer("[寄寄之家-ControlTank] 重试成功，找到 Tank bot");
-
-        // 直接开始接管流程
-        DataPack takeoverData = new DataPack();
-        takeoverData.WriteCell(userid);
-        takeoverData.WriteCell(timeSeconds);
-        takeoverData.WriteCell(tankBot);  // 保存 Tank bot 索引
-        CreateTimer(0.1, Timer_TakeoverZombieBot, takeoverData, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
-    }
-    else if (retryCount < 3)
-    {
-        PrintToServer("[寄寄之家-ControlTank] 重试失败，再试一次...");
-        DataPack retryData = new DataPack();
-        retryData.WriteCell(userid);
-        retryData.WriteCell(timeSeconds);
-        retryData.WriteCell(retryCount + 1);
-        CreateTimer(1.0, Timer_RetryTakeover, retryData, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
-    }
-    else
-    {
-        PrintToServer("[寄寄之家-ControlTank] 错误：多次重试后仍未找到 Tank bot");
-        PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01转换失败，未找到 Tank bot");
-        g_iCurrentTank = -1;
-    }
-
-    return Plugin_Stop;
-}
-
-public Action Timer_VerifyTakeover(Handle timer, int userid)
-{
-    int client = GetClientOfUserId(userid);
-
-    if (!IsClientInGame(client))
-    {
-        g_iCurrentTank = -1;
-        return Plugin_Stop;
-    }
-
-    // 验证玩家是否已经成为 Tank
-    if (GetClientTeam(client) == 3 && IsPlayerAlive(client))
-    {
-        int zClass = GetEntProp(client, Prop_Send, "m_zombieClass");
-        if (zClass == 8)
-        {
-            PrintToServer("[寄寄之家-ControlTank] 验证成功，玩家已成为 Tank");
-
-            // 设置Tank血量
-            SetEntProp(client, Prop_Send, "m_iHealth", 4000);
-            SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
-
-            // 获取控制时间
-            int timeSeconds = g_cvarTime.IntValue;
-
-            // 显示控制时间信息
-            if (timeSeconds > 0)
-            {
-                PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01你有 \x04%d \x01秒的Tank控制时间！", timeSeconds);
-                g_hTankTimer = CreateTimer(float(timeSeconds), Timer_TankTimeExpired, userid, TIMER_FLAG_NO_MAPCHANGE);
-            }
-            else
-            {
-                PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01你有 \x04无限制\x01 的Tank控制时间!");
-            }
-
-            return Plugin_Stop;
-        }
-    }
-
-    PrintToServer("[寄寄之家-ControlTank] 警告：接管验证失败");
-    PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01转换可能失败，请检查");
-    g_iCurrentTank = -1;
-    return Plugin_Stop;
-}
-
-public Action Timer_SpawnTankForPlayer(Handle timer, int userid)
-{
-    int client = GetClientOfUserId(userid);
-
-    if (!IsClientInGame(client))
-    {
-        g_iCurrentTank = -1;
-        return Plugin_Stop;
-    }
-
-    // 生成AI Tank
-    int tank = L4D2_SpawnTank(NULL_VECTOR, NULL_VECTOR);
-
-    if (tank > 0)
-    {
-        // 找到刚生成的Tank bot
-        int tankBot = FindTankBot();
-
-        if (tankBot > 0)
-        {
-            // 让玩家接管这个Tank bot
-            L4D_TakeOverZombieBot(client, tankBot);
-
-            // 设置Tank血量
-            SetEntProp(client, Prop_Send, "m_iHealth", 4000);
-            SetEntProp(client, Prop_Send, "m_iMaxHealth", 4000);
-
-            // 显示控制时间信息
-            int timeSeconds = g_cvarTime.IntValue;
-            if (timeSeconds > 0)
-            {
-                PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01你有 \x04%d \x01秒的Tank控制时间！", timeSeconds);
-                g_hTankTimer = CreateTimer(float(timeSeconds), Timer_TankTimeExpired, userid, TIMER_FLAG_NO_MAPCHANGE);
-            }
-            else
-            {
-                PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01你有 \x04无限制\x01 的Tank控制时间!");
-            }
-
-            PrintToServer("[寄寄之家-ControlTank] 成功将玩家 %d 转换为Tank", client);
-        }
-        else
-        {
-            PrintToServer("[寄寄之家-ControlTank] 警告：未找到Tank bot");
-            PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01转换失败，未找到Tank bot");
-            g_iCurrentTank = -1;
-        }
-    }
-    else
-    {
-        PrintToServer("[寄寄之家-ControlTank] 警告：L4D2_SpawnTank 失败");
-        PrintToChat(client, "\x04[寄寄之家-ControlTank] \x01转换失败，无法生成Tank");
-        g_iCurrentTank = -1;
-    }
+    PrintToServer("[寄寄之家-ControlTank] 转换完成，当前类别: %d, 存活: %d", GetEntProp(client, Prop_Send, "m_zombieClass"), IsPlayerAlive(client));
 
     return Plugin_Stop;
 }
@@ -725,39 +324,6 @@ int FindTankBot()
         }
     }
     return -1;
-}
-
-public Action Timer_TankTimeExpired(Handle timer, int userid)
-{
-    g_hTankTimer = null;
-
-    int client = GetClientOfUserId(userid);
-
-    if (!IsClientInGame(client))
-    {
-        g_iCurrentTank = -1;
-        return Plugin_Stop;
-    }
-
-    if (IsPlayerAlive(client) && GetClientTeam(client) == 3)
-    {
-        int zClass = GetEntProp(client, Prop_Send, "m_zombieClass");
-        if (zClass == 8)
-        {
-            char playerName[MAX_NAME_LENGTH];
-            GetClientName(client, playerName, sizeof(playerName));
-            PrintToChatAll("\x03[寄寄之家-ControlTank] \x01玩家 \x04%s \x01的Tank控制时间已到期！", playerName);
-
-            ForcePlayerSuicide(client);
-            g_iCurrentTank = -1;
-        }
-    }
-    else
-    {
-        g_iCurrentTank = -1;
-    }
-
-    return Plugin_Stop;
 }
 
 // 测试命令
@@ -890,10 +456,8 @@ public Action Command_TankDebug(int client, int args)
 
     ReplyToCommand(client, "========== [寄寄之家-ControlTank] 调试信息 ==========");
     ReplyToCommand(client, "插件状态: %s", g_cvarEnabled.BoolValue ? "✓ 启用" : "✗ 禁用");
-    ReplyToCommand(client, "控制时间: %d 秒", g_cvarTime.IntValue);
     ReplyToCommand(client, "当前Tank: %s", g_iCurrentTank > 0 ? "有" : "无");
     ReplyToCommand(client, "正在处理: %s", g_bTankSpawning ? "是" : "否");
-    ReplyToCommand(client, "定时器运行: %s", g_hTankTimer != null ? "是" : "否");
     ReplyToCommand(client, "是否合作模式: %s", IsCoopMode() ? "是" : "否");
     ReplyToCommand(client, "有玩家Tank: %s", HasPlayerControlledTank() ? "是" : "否");
 
