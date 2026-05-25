@@ -1,0 +1,40 @@
+name: Compile ControlTank
+on:  workflow_dispatch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 下载 SourceMod 1.12 编译器
+      - name: Setup SourceMod
+        run: |
+          wget -O sourcemod.tar.gz https://sm.alliedmods.net/smdrop/1.12/sourcemod-1.12.0-git6942-linux.tar.gz
+          tar -xzf sourcemod.tar.gz
+          mkdir -p addons/sourcemod/scripting/include/
+
+      # 下载 left4dhooks 头文件
+      - name: Install Left4DHooks includes
+        run: |
+          cd addons/sourcemod/scripting/include/
+          wget https://raw.githubusercontent.com/SilvDev/Left4DHooks/main/sourcemod/scripting/include/left4dhooks.inc
+          wget https://raw.githubusercontent.com/SilvDev/Left4DHooks/main/sourcemod/scripting/include/left4dhooks_forwards.inc
+          wget https://raw.githubusercontent.com/SilvDev/Left4DHooks/main/sourcemod/scripting/include/left4dhooks_stocks.inc
+          cd ../../../../../
+
+      # 编译你的插件
+      - name: Compile plugin
+        run: |
+          # 把你的 ControlTank.sp 复制到编译目录
+          cp *.sp addons/sourcemod/scripting/
+          cd addons/sourcemod/scripting/
+          ./spcomp ControlTank.sp -o ../../../../ControlTank.smx
+
+      # 上传编译好的 smx 文件
+      - name: Upload compiled plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: ControlTank.smx
+          path: ControlTank.smx
