@@ -38,6 +38,7 @@ public void OnPluginStart()
 
     HookEvent("tank_spawn", Event_TankSpawn);
     HookEvent("round_end", Event_RoundEnd);
+    HookEvent("player_bot_replace", Event_PlayerBotReplace);
 
     RegConsoleCmd("sm_test2", Command_Test, "测试接管AI Tank");
     RegConsoleCmd("sm_tankinfo", Command_TankInfo, "显示Tank配置信息");
@@ -152,6 +153,58 @@ void UpdateTankFrustration()
             SetEntProp(tank, Prop_Send, "m_frustrationRemaining", 0);
         }
     }
+}
+
+public void Event_PlayerBotReplace(Event event, const char[] name, bool dontBroadcast)
+{
+    int player = GetClientOfUserId(event.GetInt("player"));
+
+    if (FindCurrentTank() == player && player > 0 && IsClientInGame(player))
+    {
+        CreateTimer(0.1, Timer_RespawnPlayer, GetClientUserId(player), TIMER_FLAG_NO_MAPCHANGE);
+    }
+}
+
+public Action Timer_RespawnPlayer(Handle timer, int userid)
+{
+    int player = GetClientOfUserId(userid);
+    if (player <= 0 || player > MaxClients || !IsClientInGame(player))
+        return Plugin_Stop;
+
+    // 切换到幸存者阵营
+    ChangeClientTeam(player, 2);
+
+    // 寻找一个幸存者来重生
+    int target = FindRandomSurvivorForRespawn();
+    if (target > 0)
+    {
+        L4D_RespawnPlayer(player, target);
+        PrintToChat(player, "\x03[寄寄之家-ControlTank] \x01你已失去Tank控制权，在队友附近重生");
+    }
+
+    return Plugin_Stop;
+}
+
+int FindRandomSurvivorForRespawn()
+{
+    ArrayList survivors = new ArrayList();
+
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i) && IsPlayerAlive(i) && GetClientTeam(i) == 2)
+        {
+            survivors.Push(i);
+        }
+    }
+
+    int selected = -1;
+    if (survivors.Length > 0)
+    {
+        selected = survivors.Get(GetRandomInt(0, survivors.Length - 1));
+    }
+
+    delete survivors;
+    return selected;
 }
 
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
