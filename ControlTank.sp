@@ -663,6 +663,13 @@ void ApplyTankSettings(int client)
         }
     }
 
+    // 停止旧的挫折度定时器（如果存在）
+    if (g_hFrustrationTimer != null)
+    {
+        KillTimer(g_hFrustrationTimer);
+        g_hFrustrationTimer = null;
+    }
+
     // 根据配置设置挫折度
     int frustrationTime = g_cvarTankFrustrationTime.IntValue;
     if (frustrationTime == 0)
@@ -671,10 +678,6 @@ void ApplyTankSettings(int client)
         SetEntProp(client, Prop_Send, "m_frustration", 0);
 
         // 启动定时器持续重置挫折度
-        if (g_hFrustrationTimer != null)
-        {
-            KillTimer(g_hFrustrationTimer);
-        }
         g_hFrustrationTimer = CreateTimer(1.0, Timer_ResetFrustration, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
     }
 }
