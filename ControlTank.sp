@@ -21,7 +21,6 @@ ConVar g_cvarTankFrustrationTime;
 bool g_bTankSpawning = false;
 bool g_bIsManualTest = false;
 int g_iCurrentTank = -1;
-Handle g_hFrustrationTimer = null;
 
 public void OnPluginStart()
 {
@@ -72,43 +71,15 @@ public void OnTankHPChanged(ConVar convar, const char[] oldValue, const char[] n
     }
 }
 
-// 监控Tank挫折度设置
-public Action L4D_OnSetTankFrustration(int tank, int &frustration)
-{
-    if (tank > 0 && tank <= MaxClients && IsClientInGame(tank) && !IsFakeClient(tank))
-    {
-        int frustrationTime = g_cvarTankFrustrationTime.IntValue;
-
-        // 0 = 禁用挫折度系统（永久控制）
-        if (frustrationTime == 0)
-        {
-            frustration = 0;
-            return Plugin_Changed;
-        }
-    }
-
-    return Plugin_Continue;
-}
-
 public void OnMapEnd()
 {
     g_iCurrentTank = -1;
-    if (g_hFrustrationTimer != null)
-    {
-        KillTimer(g_hFrustrationTimer);
-        g_hFrustrationTimer = null;
-    }
 }
 
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
     g_iCurrentTank = -1;
     g_bTankSpawning = false;
-    if (g_hFrustrationTimer != null)
-    {
-        KillTimer(g_hFrustrationTimer);
-        g_hFrustrationTimer = null;
-    }
 }
 
 public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast)
@@ -117,11 +88,6 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
     if (client == g_iCurrentTank)
     {
         g_iCurrentTank = -1;
-        if (g_hFrustrationTimer != null)
-        {
-            KillTimer(g_hFrustrationTimer);
-            g_hFrustrationTimer = null;
-        }
     }
 }
 
@@ -165,13 +131,6 @@ public void Event_PlayerBotReplace(Event event, const char[] name, bool dontBroa
     {
         PrintToServer("[ControlTank] 检测到Tank玩家被替换，重置g_iCurrentTank");
         g_iCurrentTank = -1;
-
-        // 停止挫折度重置定时器
-        if (g_hFrustrationTimer != null)
-        {
-            KillTimer(g_hFrustrationTimer);
-            g_hFrustrationTimer = null;
-        }
 
         // 将玩家放回幸存者阵营（死亡状态，可被复活）
         if (player > 0 && player <= MaxClients && IsClientInGame(player))
@@ -681,46 +640,14 @@ void ApplyTankSettings(int client)
         }
     }
 
-    // 停止旧的挫折度定时器（如果存在）
-    if (g_hFrustrationTimer != null)
-    {
-        KillTimer(g_hFrustrationTimer);
-        g_hFrustrationTimer = null;
-    }
-
     // 根据配置设置挫折度
     int frustrationTime = g_cvarTankFrustrationTime.IntValue;
     if (frustrationTime == 0)
     {
         // 禁用挫折度系统（永久控制）
         SetEntProp(client, Prop_Send, "m_frustration", 0);
-
-        // 启动定时器持续重置挫折度
-        g_hFrustrationTimer = CreateTimer(1.0, Timer_ResetFrustration, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
     }
-}
-
-public Action Timer_ResetFrustration(Handle timer)
-{
-    // 如果没有玩家控制的Tank，停止定时器
-    if (g_iCurrentTank <= 0 || !IsClientInGame(g_iCurrentTank))
-    {
-        g_hFrustrationTimer = null;
-        return Plugin_Stop;
-    }
-
-    // 如果配置不再是0，停止定时器
-    int frustrationTime = g_cvarTankFrustrationTime.IntValue;
-    if (frustrationTime != 0)
-    {
-        g_hFrustrationTimer = null;
-        return Plugin_Stop;
-    }
-
-    // 重置挫折度为0
-    SetEntProp(g_iCurrentTank, Prop_Send, "m_frustration", 0);
-
-    return Plugin_Continue;
+    // 配置为1时，不设置挫折度，让游戏使用默认系统
 }
 
 bool IsCoopMode()
