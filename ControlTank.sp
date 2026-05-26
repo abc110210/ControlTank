@@ -36,6 +36,7 @@ public void OnPluginStart()
     HookEvent("round_end", Event_RoundEnd);
     HookEvent("player_bot_replace", Event_PlayerBotReplace);
     HookEvent("bot_player_replace", Event_BotPlayerReplace);
+    HookEvent("player_team", Event_PlayerTeam);
 
     RegConsoleCmd("sm_test2", Command_Test2, "测试接管AI Tank");
     RegConsoleCmd("sm_tankinfo", Command_TankInfo, "显示Tank配置信息");
@@ -259,6 +260,37 @@ public void Event_BotPlayerReplace(Event event, const char[] name, bool dontBroa
     if (bot == g_iCurrentTank && player > 0 && player <= MaxClients)
     {
         g_iCurrentTank = player;
+    }
+}
+
+public void Event_PlayerTeam(Event event, const char[] name, bool dontBroadcast)
+{
+    int client = GetClientOfUserId(event.GetInt("userid"));
+    int oldTeam = event.GetInt("oldteam");
+    int newTeam = event.GetInt("team");
+
+    // 检查是否是当前Tank玩家离开感染者队伍
+    if (client == g_iCurrentTank && oldTeam == 3 && newTeam != 3)
+    {
+        PrintToServer("[ControlTank] player_team事件 - Tank玩家从队伍%d切换到队伍%d", oldTeam, newTeam);
+        PrintToServer("[ControlTank] 重置g_iCurrentTank");
+
+        g_iCurrentTank = -1;
+
+        // 如果玩家没有去幸存者队伍，切换过去
+        if (newTeam != 2 && client > 0 && client <= MaxClients && IsClientInGame(client))
+        {
+            PrintToServer("[ControlTank] 玩家未去幸存者队伍(当前:%d)，切换到队伍2", newTeam);
+            ChangeClientTeam(client, 2);
+
+            CreateTimer(0.1, Timer_EnsurePlayerDead, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+        }
+        else if (newTeam == 2 && IsPlayerAlive(client))
+        {
+            // 如果在幸存者队伍但还活着，杀死他
+            PrintToServer("[ControlTank] 玩家在幸存者队伍且存活，执行杀死");
+            CreateTimer(0.1, Timer_EnsurePlayerDead, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+        }
     }
 }
 
