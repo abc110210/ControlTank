@@ -22,7 +22,6 @@ ConVar g_cvarFrustrationEnabled;
 bool g_bTankSpawning = false;
 bool g_bIsManualTest = false;
 float g_fLastTankSpawnTime = 0.0;
-bool g_bPlayerLostControl = false;
 
 // AFK检测
 float g_fLastActivityTime[MAXPLAYERS + 1];
@@ -39,7 +38,6 @@ public void OnPluginStart()
 
     HookEvent("tank_spawn", Event_TankSpawn);
     HookEvent("round_end", Event_RoundEnd);
-    HookEvent("player_bot_replace", Event_PlayerBotReplace);
 
     RegConsoleCmd("sm_test2", Command_Test, "测试接管AI Tank");
     RegConsoleCmd("sm_tankinfo", Command_TankInfo, "显示Tank配置信息");
@@ -157,48 +155,6 @@ void UpdateTankFrustration()
     }
 }
 
-public void Event_PlayerBotReplace(Event event, const char[] name, bool dontBroadcast)
-{
-    int player = GetClientOfUserId(event.GetInt("player"));
-    int bot = GetClientOfUserId(event.GetInt("bot"));
-
-    if (player > 0 && player <= MaxClients && IsClientInGame(player))
-    {
-        // 检查玩家是否在控制Tank
-        if (GetClientTeam(player) == 3)
-        {
-            int zClass = GetEntProp(player, Prop_Send, "m_zombieClass");
-            if (zClass == 8)
-            {
-                // 玩家控制Tank，检查bot是否还活着
-                if (bot > 0 && bot <= MaxClients && IsClientInGame(bot) && IsPlayerAlive(bot))
-                {
-                    // 玩家失去控制权，设置标志跳过下一次tank_spawn
-                    g_bPlayerLostControl = true;
-                }
-
-                // 以死亡状态加入幸存者阵营（像中途加入一样）
-                ChangeClientTeam(player, 1); // 先移到观察者队伍
-                CreateTimer(0.1, Timer_JoinSurvivorDead, GetClientUserId(player), TIMER_FLAG_NO_MAPCHANGE);
-            }
-        }
-    }
-}
-
-public Action Timer_JoinSurvivorDead(Handle timer, int userid)
-{
-    int player = GetClientOfUserId(userid);
-    if (player > 0 && player <= MaxClients && IsClientInGame(player))
-    {
-        ChangeClientTeam(player, 2); // 加入幸存者阵营（死亡状态）
-    }
-
-    // 玩家已经加入幸存者队伍，重置标志
-    g_bPlayerLostControl = false;
-
-    return Plugin_Stop;
-}
-
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
     g_bTankSpawning = false;
@@ -210,20 +166,23 @@ public void Event_TankSpawn(Event event, const char[] name, bool dontBroadcast)
     if (!g_cvarEnabled.BoolValue || !IsCoopMode() || g_bIsManualTest || g_bTankSpawning)
         return;
 
-    // 如果玩家刚失去控制权，跳过这次tank_spawn事件（防止循环）
-    if (g_bPlayerLostControl)
-    {
-        return; // 不重置标志，在玩家真正加入幸存者队伍前一直跳过
-    }
-
-    // 防止重复生成Tank：10秒内只处理一次tank_spawn事件
     float currentTime = GetGameTime();
-    if (currentTime - g_fLastTankSpawnTime < 10.0)
+
+    // 更长的时间限制：30秒内只处理一次tank_spawn事件
+    if (currentTime - g_fLastTankSpawnTime < 30.0)
         return;
+
+    // 额外检查：如果最近有玩家被选中变成Tank，跳过这次事件
+    if (g_fLastTankSpawnTime > 0.0 && (currentTime - g_fLastTankSpawnTime < 60.0))
+    {
+        // 检查是否已经有玩家控制的Tank
+        if (HasPlayerTank())
+            return;
+    }
 
     g_fLastTankSpawnTime = currentTime;
     g_bTankSpawning = true;
-    CreateTimer(0.5, Timer_SelectTank, _, TIMER_FLAG_NO_MAPCHANGE);
+    CreateTimer(1.0, Timer_SelectTank, _, TIMER_FLAG_NO_MAPCHANGE);
 }
 
 public Action Timer_SelectTank(Handle timer)
