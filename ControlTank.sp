@@ -72,6 +72,24 @@ public void OnTankHPChanged(ConVar convar, const char[] oldValue, const char[] n
     }
 }
 
+// 监控Tank挫折度设置
+public Action L4D_OnSetTankFrustration(int tank, int &frustration)
+{
+    if (tank > 0 && tank <= MaxClients && IsClientInGame(tank) && !IsFakeClient(tank))
+    {
+        int frustrationTime = g_cvarTankFrustrationTime.IntValue;
+
+        // 0 = 禁用挫折度系统（永久控制）
+        if (frustrationTime == 0)
+        {
+            frustration = 0;
+            return Plugin_Changed;
+        }
+    }
+
+    return Plugin_Continue;
+}
+
 public void OnMapEnd()
 {
     g_iCurrentTank = -1;
