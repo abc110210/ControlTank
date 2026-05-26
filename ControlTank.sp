@@ -73,22 +73,8 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 
 public Action Timer_CheckAFK(Handle timer)
 {
-    for (int i = 1; i <= MaxClients; i++)
-    {
-        if (IsClientInGame(i) && !IsFakeClient(i) && IsPlayerAlive(i) && GetClientTeam(i) == 2)
-        {
-            float pos[3];
-            GetClientAbsOrigin(i, pos);
-
-            float lastPos[3];
-            GetEntPropVector(i, Prop_Send, "m_vecOrigin", lastPos);
-
-            if (GetVectorDistance(lastPos, pos) > 10.0)
-            {
-                g_fLastActivityTime[i] = GetGameTime();
-            }
-        }
-    }
+    // AFK检测主要由OnPlayerRunCmd处理，这个定时器作为备份
+    // 不需要额外的逻辑，OnPlayerRunCmd已经足够了
     return Plugin_Continue;
 }
 
@@ -192,17 +178,8 @@ public Action Timer_HandlePlayerLostControl(Handle timer, DataPack data)
     if (player <= 0 || player > MaxClients || !IsClientInGame(player))
         return Plugin_Stop;
 
-    // 检查bot是否还存在，如果存在说明玩家失去控制权但Tank还活着
-    if (bot > 0 && bot <= MaxClients && IsClientInGame(bot) && IsFakeClient(bot) && IsPlayerAlive(bot))
-    {
-        // Tank还活着，玩家失去控制权，切换到幸存者阵营
-        ChangeClientTeam(player, 2);
-    }
-    else
-    {
-        // Tank死了，切换到幸存者阵营
-        ChangeClientTeam(player, 2);
-    }
+    // 切换到幸存者阵营，系统会处理其他逻辑
+    ChangeClientTeam(player, 2);
 
     return Plugin_Stop;
 }
@@ -352,19 +329,9 @@ void TransformToTank(int client)
     if (tankBot <= 0)
         return;
 
-    float vPos[3], vAng[3];
-    GetClientAbsOrigin(client, vPos);
-    GetClientAbsAngles(client, vAng);
-
     DataPack data = new DataPack();
     data.WriteCell(GetClientUserId(client));
     data.WriteCell(tankBot);
-    data.WriteFloat(vPos[0]);
-    data.WriteFloat(vPos[1]);
-    data.WriteFloat(vPos[2]);
-    data.WriteFloat(vAng[0]);
-    data.WriteFloat(vAng[1]);
-    data.WriteFloat(vAng[2]);
 
     ForcePlayerSuicide(client);
     CreateTimer(0.5, Timer_Takeover, data, TIMER_FLAG_NO_MAPCHANGE);
@@ -385,12 +352,8 @@ public Action Timer_Takeover(Handle timer, DataPack data)
 
     if (!IsClientInGame(tankBot) || !IsFakeClient(tankBot) || !IsPlayerAlive(tankBot))
     {
-        tankBot = FindTankBot();
-        if (tankBot <= 0)
-        {
-            delete data;
-            return Plugin_Stop;
-        }
+        delete data;
+        return Plugin_Stop;
     }
 
     ChangeClientTeam(client, 3);
@@ -487,20 +450,10 @@ public Action Command_Test(int client, int args)
         needSpawn = true;
     }
 
-    float vPos[3], vAng[3];
-    GetClientAbsOrigin(client, vPos);
-    GetClientAbsAngles(client, vAng);
-
     DataPack data = new DataPack();
     data.WriteCell(GetClientUserId(client));
     data.WriteCell(tankBot);
     data.WriteCell(needSpawn ? 1 : 0);
-    data.WriteFloat(vPos[0]);
-    data.WriteFloat(vPos[1]);
-    data.WriteFloat(vPos[2]);
-    data.WriteFloat(vAng[0]);
-    data.WriteFloat(vAng[1]);
-    data.WriteFloat(vAng[2]);
 
     ForcePlayerSuicide(client);
 
