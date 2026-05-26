@@ -117,7 +117,7 @@ public Action L4D_OnSetTankFrustration(int tank, int &frustration)
         if (!g_cvarFrustrationEnabled.BoolValue)
         {
             frustration = 0;
-            return Plugin_Changed;
+            return Plugin_Handled;
         }
     }
     return Plugin_Continue;
@@ -141,6 +141,13 @@ void UpdateTankFrustration()
     int tank = FindCurrentTank();
     if (tank > 0 && IsClientInGame(tank))
     {
+        // 停止旧的挫折度定时器
+        if (g_hFrustrationTimer != null)
+        {
+            KillTimer(g_hFrustrationTimer);
+            g_hFrustrationTimer = null;
+        }
+
         if (g_cvarFrustrationEnabled.BoolValue)
         {
             SetEntProp(tank, Prop_Send, "m_frustration", 0);
@@ -149,7 +156,10 @@ void UpdateTankFrustration()
         else
         {
             SetEntProp(tank, Prop_Send, "m_frustration", 0);
-            SetEntProp(tank, Prop_Send, "m_frustrationRemaining", 0);
+            SetEntProp(tank, Prop_Send, "m_frustrationRemaining", 100);
+
+            // 启动高频定时器持续重置挫折度
+            g_hFrustrationTimer = CreateTimer(0.1, Timer_ResetFrustration, GetClientUserId(tank), TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
         }
     }
 }
@@ -472,16 +482,18 @@ void ApplyTankSettings(int client)
 
     if (g_cvarFrustrationEnabled.BoolValue)
     {
+        // 启用挫折度：使用系统默认值
         SetEntProp(client, Prop_Send, "m_frustration", 0);
         SetEntProp(client, Prop_Send, "m_frustrationRemaining", 100);
     }
     else
     {
+        // 禁用挫折度：设置为最大值以防止控制权丢失
         SetEntProp(client, Prop_Send, "m_frustration", 0);
-        SetEntProp(client, Prop_Send, "m_frustrationRemaining", 0);
+        SetEntProp(client, Prop_Send, "m_frustrationRemaining", 100);
 
-        // 启动定时器持续重置挫折度，确保永远不会增加
-        g_hFrustrationTimer = CreateTimer(1.0, Timer_ResetFrustration, GetClientUserId(client), TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
+        // 启动高频定时器持续重置挫折度，确保永远不会增加
+        g_hFrustrationTimer = CreateTimer(0.1, Timer_ResetFrustration, GetClientUserId(client), TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
     }
 }
 
@@ -639,6 +651,14 @@ public Action Command_DebugFrustration(int client, int args)
     if (client == 0)
     {
         ReplyToCommand(client, "[寄寄之家-ControlTank] 此命令只能由玩家使用");
+        return Plugin_Handled;
+    }
+
+    // 检查管理员权限
+    AdminId adminId = GetUserAdmin(client);
+    if (adminId == INVALID_ADMIN_ID)
+    {
+        ReplyToCommand(client, "[寄寄之家-ControlTank] 此命令只能由管理员使用");
         return Plugin_Handled;
     }
 
