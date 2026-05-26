@@ -95,7 +95,6 @@ public void OnMapStart()
 {
     g_bTankSpawning = false;
     g_fLastTankSpawnTime = 0.0;
-    g_bPlayerLostControl = false;
     ApplyServerSettings();
 }
 
@@ -158,7 +157,6 @@ void UpdateTankFrustration()
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
     g_bTankSpawning = false;
-    g_bPlayerLostControl = false;
 }
 
 public void Event_TankSpawn(Event event, const char[] name, bool dontBroadcast)
@@ -369,7 +367,6 @@ public Action Timer_TakeoverPhase2(Handle timer, DataPack data)
     L4D_TakeOverZombieBot(client, tankBot);
     delete data;
 
-    g_bPlayerLostControl = false; // 玩家成功接管Tank，重置标志
     ApplyTankSettings(client);
     return Plugin_Stop;
 }
@@ -514,7 +511,6 @@ public Action Timer_TestTakeoverPhase2(Handle timer, DataPack data)
     L4D_TakeOverZombieBot(client, tankBot);
     delete data;
 
-    g_bPlayerLostControl = false; // 玩家成功接管Tank，重置标志
     ApplyTankSettings(client);
     ReplyToCommand(client, "[寄寄之家-ControlTank] ✓ 已转换为 Tank");
 
