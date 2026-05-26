@@ -30,7 +30,7 @@ public void OnPluginStart()
 {
     g_cvarEnabled = CreateConVar("shan_controltank_enabled", "1", "是否启用Tank随机选择功能", FCVAR_NOTIFY, true, 0.0, true, 1.0);
     g_cvarTankHP = CreateConVar("shan_controltank_hp", "4000", "Tank血量设置", FCVAR_NOTIFY, true, 1.0, true, 120000.0);
-    g_cvarFrustrationEnabled = CreateConVar("shan_controltank_frustration", "1", "Tank挫折度系统(0=关闭/永久控制, 1=开启)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+    g_cvarFrustrationEnabled = CreateConVar("shan_controltank_time", "1", "Tank挫折度系统(0=关闭/永久控制, 1=开启)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 
     AutoExecConfig(true, "controltank");
     HookConVarChange(g_cvarTankHP, OnConVarChanged);
@@ -39,8 +39,9 @@ public void OnPluginStart()
     HookEvent("tank_spawn", Event_TankSpawn);
     HookEvent("round_end", Event_RoundEnd);
     HookEvent("player_bot_replace", Event_PlayerBotReplace);
+    HookEvent("player_death", Event_PlayerDeath);
 
-    RegConsoleCmd("sm_test2", Command_Test, "测试接管AI Tank");
+    RegConsoleCmd("sm_tanktest", Command_Test, "测试接管AI Tank");
     RegConsoleCmd("sm_tankinfo", Command_TankInfo, "显示Tank配置信息");
 
     CreateTimer(5.0, Timer_CheckAFK, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
@@ -165,6 +166,35 @@ public void Event_PlayerBotReplace(Event event, const char[] name, bool dontBroa
             }
         }
     }
+}
+
+public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast)
+{
+    int client = GetClientOfUserId(event.GetInt("userid"));
+
+    if (client > 0 && client <= MaxClients && IsClientInGame(client))
+    {
+        // 检查死亡的是否是玩家控制的Tank
+        if (GetClientTeam(client) == 3)
+        {
+            int zClass = GetEntProp(client, Prop_Send, "m_zombieClass");
+            if (zClass == 8)
+            {
+                // 玩家控制的Tank死亡，切换到幸存者阵营
+                CreateTimer(0.1, Timer_JoinSurvivorTeam, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+            }
+        }
+    }
+}
+
+public Action Timer_JoinSurvivorTeam(Handle timer, int userid)
+{
+    int player = GetClientOfUserId(userid);
+    if (player > 0 && player <= MaxClients && IsClientInGame(player))
+    {
+        ChangeClientTeam(player, 2);
+    }
+    return Plugin_Stop;
 }
 
 public Action Timer_HandlePlayerLostControl(Handle timer, DataPack data)
