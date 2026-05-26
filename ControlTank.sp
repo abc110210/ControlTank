@@ -34,6 +34,7 @@ public void OnPluginStart()
 
     AutoExecConfig(true, "controltank");
     HookConVarChange(g_cvarTankHP, OnTankHPChanged);
+    HookConVarChange(g_cvarTankFrustrationTime, OnFrustrationTimeChanged);
 
     HookEvent("tank_spawn", Event_TankSpawn);
     HookEvent("player_death", Event_PlayerDeath);
@@ -138,6 +139,29 @@ public void OnTankHPChanged(ConVar convar, const char[] oldValue, const char[] n
         if (zTankHP != null)
         {
             zTankHP.SetInt(newHP);
+        }
+    }
+}
+
+public void OnFrustrationTimeChanged(ConVar convar, const char[] oldValue, const char[] newValue)
+{
+    int newConfig = StringToInt(newValue);
+
+    // 如果当前有玩家控制Tank，更新挫折度设置
+    int currentTankPlayer = FindCurrentTankPlayer();
+    if (currentTankPlayer > 0 && IsClientInGame(currentTankPlayer))
+    {
+        if (newConfig == 0)
+        {
+            // 禁用挫折度系统
+            SetEntProp(currentTankPlayer, Prop_Send, "m_frustration", 0);
+            SetEntProp(currentTankPlayer, Prop_Send, "m_frustrationRemaining", 0);
+        }
+        else
+        {
+            // 启用挫折度系统
+            SetEntProp(currentTankPlayer, Prop_Send, "m_frustration", 0);
+            SetEntProp(currentTankPlayer, Prop_Send, "m_frustrationRemaining", 100);
         }
     }
 }
@@ -406,6 +430,26 @@ bool HasPlayerControlledTank()
     return false;
 }
 
+// 查找当前控制Tank的玩家
+int FindCurrentTankPlayer()
+{
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i) && !IsFakeClient(i) && IsPlayerAlive(i))
+        {
+            if (GetClientTeam(i) == 3)
+            {
+                int zClass = GetEntProp(i, Prop_Send, "m_zombieClass");
+                if (zClass == 8)
+                {
+                    return i;
+                }
+            }
+        }
+    }
+    return -1;
+}
+
 // 判断玩家是否AFK（60秒无活动）
 bool IsPlayerAFK(int client)
 {
@@ -583,6 +627,9 @@ public Action Timer_TakeoverExistingTank_Phase2(Handle timer, DataPack data)
     L4D_TakeOverZombieBot(client, tankBot);
     delete data;
 
+    // 更新当前Tank玩家（使用userid而不是client索引，更可靠）
+    g_iCurrentTank = client;
+
     // 应用Tank设置
     ApplyTankSettings(client);
 
@@ -746,8 +793,12 @@ public Action Timer_Test2_Finalize(Handle timer, int userid)
     if (!IsClientInGame(client))
     {
         g_bIsManualTest = false;
+        g_iCurrentTank = -1;
         return Plugin_Stop;
     }
+
+    // 更新当前Tank玩家
+    g_iCurrentTank = client;
 
     // 应用Tank设置
     ApplyTankSettings(client);
@@ -784,6 +835,7 @@ void ApplyTankSettings(int client)
     {
         // 启用默认挫折度系统 - 确保系统正常工作
         SetEntProp(client, Prop_Send, "m_frustration", 0);
+        SetEntProp(client, Prop_Send, "m_frustrationRemaining", 100);  // 设置默认值
     }
 }
 
@@ -811,13 +863,24 @@ public Action Command_TankInfo(int client, int args)
     ReplyToCommand(client, "插件启用: %s", g_cvarEnabled.BoolValue ? "是" : "否");
     ReplyToCommand(client, "Tank血量: %d", g_cvarTankHP.IntValue);
     ReplyToCommand(client, "挫折度系统: %s", g_cvarTankFrustrationTime.IntValue == 0 ? "关闭 (永久控制)" : "开启 (系统默认)");
-    ReplyToCommand(client, "当前Tank: %s", g_iCurrentTank > 0 ? "有" : "无");
-    if (g_iCurrentTank > 0 && IsClientInGame(g_iCurrentTank))
+
+    // 查找当前控制Tank的玩家
+    int currentTankPlayer = FindCurrentTankPlayer();
+    if (currentTankPlayer > 0)
     {
-        char name[MAX_NAME_LENGTH];
-        GetClientName(g_iCurrentTank, name, sizeof(name));
-        ReplyToCommand(client, "Tank玩家: %s", name);
+        ReplyToCommand(client, "当前Tank: 有");
+        if (IsClientInGame(currentTankPlayer))
+        {
+            char name[MAX_NAME_LENGTH];
+            GetClientName(currentTankPlayer, name, sizeof(name));
+            ReplyToCommand(client, "Tank玩家: %s", name);
+        }
     }
+    else
+    {
+        ReplyToCommand(client, "当前Tank: 无");
+    }
+
     ReplyToCommand(client, "====================================");
 
     return Plugin_Handled;
