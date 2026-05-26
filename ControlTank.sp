@@ -162,23 +162,25 @@ public void Event_PlayerBotReplace(Event event, const char[] name, bool dontBroa
     int player = GetClientOfUserId(event.GetInt("player"));
     int bot = GetClientOfUserId(event.GetInt("bot"));
 
-    if (FindCurrentTank() == player && player > 0 && IsClientInGame(player))
+    if (player > 0 && player <= MaxClients && IsClientInGame(player))
     {
-        // 检查bot是否还活着
-        if (bot > 0 && bot <= MaxClients && IsClientInGame(bot) && IsPlayerAlive(bot))
+        // 检查玩家是否在控制Tank
+        if (GetClientTeam(player) == 3)
         {
-            // 玩家失去控制权，设置标志跳过下一次tank_spawn
-            g_bPlayerLostControl = true;
+            int zClass = GetEntProp(player, Prop_Send, "m_zombieClass");
+            if (zClass == 8)
+            {
+                // 玩家控制Tank，检查bot是否还活着
+                if (bot > 0 && bot <= MaxClients && IsClientInGame(bot) && IsPlayerAlive(bot))
+                {
+                    // 玩家失去控制权，设置标志跳过下一次tank_spawn
+                    g_bPlayerLostControl = true;
+                }
 
-            // 以死亡状态加入幸存者阵营（像中途加入一样）
-            ChangeClientTeam(player, 1); // 先移到观察者队伍
-            CreateTimer(0.1, Timer_JoinSurvivorDead, GetClientUserId(player), TIMER_FLAG_NO_MAPCHANGE);
-        }
-        else
-        {
-            // Tank死亡，也以死亡状态加入幸存者阵营
-            ChangeClientTeam(player, 1); // 先移到观察者队伍
-            CreateTimer(0.1, Timer_JoinSurvivorDead, GetClientUserId(player), TIMER_FLAG_NO_MAPCHANGE);
+                // 以死亡状态加入幸存者阵营（像中途加入一样）
+                ChangeClientTeam(player, 1); // 先移到观察者队伍
+                CreateTimer(0.1, Timer_JoinSurvivorDead, GetClientUserId(player), TIMER_FLAG_NO_MAPCHANGE);
+            }
         }
     }
 }
@@ -190,6 +192,10 @@ public Action Timer_JoinSurvivorDead(Handle timer, int userid)
     {
         ChangeClientTeam(player, 2); // 加入幸存者阵营（死亡状态）
     }
+
+    // 玩家已经加入幸存者队伍，重置标志
+    g_bPlayerLostControl = false;
+
     return Plugin_Stop;
 }
 
@@ -207,8 +213,7 @@ public void Event_TankSpawn(Event event, const char[] name, bool dontBroadcast)
     // 如果玩家刚失去控制权，跳过这次tank_spawn事件（防止循环）
     if (g_bPlayerLostControl)
     {
-        g_bPlayerLostControl = false; // 重置标志，下次tank_spawn正常处理
-        return;
+        return; // 不重置标志，在玩家真正加入幸存者队伍前一直跳过
     }
 
     // 防止重复生成Tank：10秒内只处理一次tank_spawn事件
