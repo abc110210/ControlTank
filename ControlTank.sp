@@ -82,7 +82,7 @@ public Action L4D_OnSetTankFrustration(int tank, int &frustration)
         if (frustrationTime == 0)
         {
             frustration = 0;
-            return Plugin_Handled;  // 完全阻止挫折度设置
+            return Plugin_Changed;  // 告诉引擎我们修改了值
         }
     }
 
