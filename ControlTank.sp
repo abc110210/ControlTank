@@ -15,6 +15,7 @@ public Plugin myinfo =
 };
 
 ConVar g_cvarEnabled;
+ConVar g_cvarTankTime;
 
 bool g_bTankSpawning = false;
 float g_fLastTankSpawnTime = 0.0;
@@ -25,6 +26,7 @@ int g_iCurrentTankUserId = 0;
 public void OnPluginStart()
 {
     g_cvarEnabled = CreateConVar("shan_controltank_enabled", "1", "是否启用Tank随机选择功能 (0=禁用, 1=启用)", FCVAR_NOTIFY|FCVAR_PRINTABLEONLY, true, 0.0, true, 1.0);
+    g_cvarTankTime = CreateConVar("shan_controltank_time", "100", "Tank控制权时长 (-1=永久控制, 1~100=控制权秒数)", FCVAR_NOTIFY|FCVAR_PRINTABLEONLY, true, -1.0, true, 100.0);
 
     AutoExecConfig(true, "controltank");
 
@@ -244,7 +246,28 @@ public Action Timer_TakeoverPhase2(Handle timer, DataPack data)
     // 记录当前控制Tank的玩家
     g_iCurrentTankUserId = GetClientUserId(client);
 
+    // 设置挫折度系统
+    ApplyTankFrustration();
+
     return Plugin_Stop;
+}
+
+void ApplyTankFrustration()
+{
+    int tankTime = g_cvarTankTime.IntValue;
+
+    // 100以上全部都是100
+    if (tankTime > 100)
+    {
+        tankTime = 100;
+    }
+
+    // 设置控制台变量 z_frustration_lifetime
+    ConVar zFrustrationLifetime = FindConVar("z_frustration_lifetime");
+    if (zFrustrationLifetime != null)
+    {
+        zFrustrationLifetime.SetInt(tankTime);
+    }
 }
 
 // 当玩家控制的Tank死亡时
@@ -363,20 +386,36 @@ public Action Command_TankInfo(int client, int args)
 
     PrintToChat(client, "\x01========== \x03[寄寄之家 - ControlTank]\x01==========");
 
-    // 显示Tank血量（最大生命值）
-    if (isPlayerControlled && tankClient > 0)
+    // 显示Tank血量（读取本局Tank设置的血量）
+    ConVar zTankHP = FindConVar("z_tank_health");
+    int tankHP = 0;
+    if (zTankHP != null)
     {
-        int maxHealth = GetEntProp(tankClient, Prop_Send, "m_iMaxHealth");
-        PrintToChat(client, "\x01Tank血量: \x04%d", maxHealth);
+        tankHP = zTankHP.IntValue;
     }
-    else if (tankEntity > 0)
+
+    // 如果有Tank实体，优先使用实体的最大血量
+    int tankEnt = isPlayerControlled ? tankClient : tankEntity;
+    if (tankEnt > 0)
     {
-        int maxHealth = GetEntProp(tankEntity, Prop_Send, "m_iMaxHealth");
-        PrintToChat(client, "\x01Tank血量: \x04%d", maxHealth);
+        int maxHealth = GetEntProp(tankEnt, Prop_Send, "m_iMaxHealth");
+        if (maxHealth > 0)
+        {
+            tankHP = maxHealth;
+        }
+    }
+
+    PrintToChat(client, "\x01Tank血量: \x04%d", tankHP);
+
+    // 显示Tank控制时间
+    int tankTime = g_cvarTankTime.IntValue;
+    if (tankTime == -1)
+    {
+        PrintToChat(client, "\x01Tank控制时间: \x04无限时间");
     }
     else
     {
-        PrintToChat(client, "\x01Tank血量: \x04无");
+        PrintToChat(client, "\x01Tank控制时间: \x04%d \x01秒", tankTime);
     }
 
     // 显示Tank操控者
