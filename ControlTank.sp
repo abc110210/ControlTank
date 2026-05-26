@@ -38,6 +38,7 @@ public void OnPluginStart()
 
     HookEvent("tank_spawn", Event_TankSpawn);
     HookEvent("round_end", Event_RoundEnd);
+    HookEvent("player_bot_replace", Event_PlayerBotReplace);
 
     RegConsoleCmd("sm_test2", Command_Test, "测试接管AI Tank");
     RegConsoleCmd("sm_tankinfo", Command_TankInfo, "显示Tank配置信息");
@@ -152,6 +153,58 @@ void UpdateTankFrustration()
             SetEntProp(tank, Prop_Send, "m_frustrationRemaining", 0);
         }
     }
+}
+
+public void Event_PlayerBotReplace(Event event, const char[] name, bool dontBroadcast)
+{
+    int player = GetClientOfUserId(event.GetInt("player"));
+    int bot = GetClientOfUserId(event.GetInt("bot"));
+
+    // 只处理玩家控制的Tank被bot替换的情况
+    if (player > 0 && player <= MaxClients && IsClientInGame(player))
+    {
+        if (GetClientTeam(player) == 3)
+        {
+            int zClass = GetEntProp(player, Prop_Send, "m_zombieClass");
+            if (zClass == 8)
+            {
+                // 先更新时间戳，防止触发新的tank_spawn
+                g_fLastTankSpawnTime = GetGameTime();
+
+                // 使用定时器延迟处理，让游戏原始逻辑先完成
+                DataPack data = new DataPack();
+                data.WriteCell(GetClientUserId(player));
+                data.WriteCell(bot); // 记录bot索引
+                CreateTimer(0.5, Timer_HandlePlayerLostControl, data, TIMER_FLAG_NO_MAPCHANGE);
+            }
+        }
+    }
+}
+
+public Action Timer_HandlePlayerLostControl(Handle timer, DataPack data)
+{
+    data.Reset();
+    int userid = data.ReadCell();
+    int bot = data.ReadCell();
+    delete data;
+
+    int player = GetClientOfUserId(userid);
+    if (player <= 0 || player > MaxClients || !IsClientInGame(player))
+        return Plugin_Stop;
+
+    // 检查bot是否还存在，如果存在说明玩家失去控制权但Tank还活着
+    if (bot > 0 && bot <= MaxClients && IsClientInGame(bot) && IsFakeClient(bot) && IsPlayerAlive(bot))
+    {
+        // Tank还活着，玩家失去控制权，切换到幸存者阵营
+        ChangeClientTeam(player, 2);
+    }
+    else
+    {
+        // Tank死了，切换到幸存者阵营
+        ChangeClientTeam(player, 2);
+    }
+
+    return Plugin_Stop;
 }
 
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
