@@ -169,11 +169,28 @@ public void Event_PlayerBotReplace(Event event, const char[] name, bool dontBroa
         {
             // 玩家失去控制权，设置标志跳过下一次tank_spawn
             g_bPlayerLostControl = true;
-        }
 
-        // 只切换阵营，其他交给系统处理
-        ChangeClientTeam(player, 2);
+            // 以死亡状态加入幸存者阵营（像中途加入一样）
+            ChangeClientTeam(player, 1); // 先移到观察者队伍
+            CreateTimer(0.1, Timer_JoinSurvivorDead, GetClientUserId(player), TIMER_FLAG_NO_MAPCHANGE);
+        }
+        else
+        {
+            // Tank死亡，也以死亡状态加入幸存者阵营
+            ChangeClientTeam(player, 1); // 先移到观察者队伍
+            CreateTimer(0.1, Timer_JoinSurvivorDead, GetClientUserId(player), TIMER_FLAG_NO_MAPCHANGE);
+        }
     }
+}
+
+public Action Timer_JoinSurvivorDead(Handle timer, int userid)
+{
+    int player = GetClientOfUserId(userid);
+    if (player > 0 && player <= MaxClients && IsClientInGame(player))
+    {
+        ChangeClientTeam(player, 2); // 加入幸存者阵营（死亡状态）
+    }
+    return Plugin_Stop;
 }
 
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
