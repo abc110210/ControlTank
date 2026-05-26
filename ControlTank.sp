@@ -114,22 +114,60 @@ public void Event_PlayerBotReplace(Event event, const char[] name, bool dontBroa
     int player = GetClientOfUserId(event.GetInt("player"));
     int bot = GetClientOfUserId(event.GetInt("bot"));
 
-    PrintToServer("[ControlTank] player_bot_replace 事件 - 玩家: %N, Bot: %N, 当前Tank: %N", player, bot, g_iCurrentTank);
+    char playerInfo[64], botInfo[64], tankInfo[64];
+    if (player > 0 && player <= MaxClients && IsClientInGame(player))
+    {
+        Format(playerInfo, sizeof(playerInfo), "%N", player);
+    }
+    else
+    {
+        Format(playerInfo, sizeof(playerInfo), "invalid(%d)", player);
+    }
+
+    if (bot > 0 && bot <= MaxClients && IsClientInGame(bot))
+    {
+        Format(botInfo, sizeof(botInfo), "%N", bot);
+    }
+    else
+    {
+        Format(botInfo, sizeof(botInfo), "invalid(%d)", bot);
+    }
+
+    if (g_iCurrentTank > 0 && g_iCurrentTank <= MaxClients && IsClientInGame(g_iCurrentTank))
+    {
+        Format(tankInfo, sizeof(tankInfo), "%N", g_iCurrentTank);
+    }
+    else
+    {
+        Format(tankInfo, sizeof(tankInfo), "invalid(%d)", g_iCurrentTank);
+    }
+
+    PrintToServer("[ControlTank] player_bot_replace - 玩家: %s, Bot: %s, 当前Tank: %s", playerInfo, botInfo, tankInfo);
 
     // 当玩家被bot替换时（玩家失去Tank控制权）
     if (player == g_iCurrentTank)
     {
+        PrintToServer("[ControlTank] 检测到Tank玩家被替换，重置g_iCurrentTank");
         g_iCurrentTank = -1;
 
         // 将玩家放回幸存者阵营（死亡状态，可被复活）
-        if (IsClientInGame(player))
+        if (player > 0 && player <= MaxClients && IsClientInGame(player))
         {
-            PrintToServer("[ControlTank] 执行 ChangeClientTeam(%N, 2)", player);
+            int currentTeam = GetClientTeam(player);
+            PrintToServer("[ControlTank] 玩家当前队伍: %d, 准备切换到队伍2(幸存者)", currentTeam);
             ChangeClientTeam(player, 2);
 
-            PrintToServer("[ControlTank] 创建定时器检查玩家状态");
+            PrintToServer("[ControlTank] 已调用ChangeClientTeam，创建定时器检查玩家状态");
             CreateTimer(0.1, Timer_EnsurePlayerDead, GetClientUserId(player), TIMER_FLAG_NO_MAPCHANGE);
         }
+        else
+        {
+            PrintToServer("[ControlTank] 玩家索引无效，跳过队伍切换");
+        }
+    }
+    else
+    {
+        PrintToServer("[ControlTank] 被替换的玩家不是当前Tank，跳过处理");
     }
 }
 
@@ -137,31 +175,78 @@ public Action Timer_EnsurePlayerDead(Handle timer, int userid)
 {
     int player = GetClientOfUserId(userid);
 
-    PrintToServer("[ControlTank] Timer_EnsurePlayerDead 触发 - 玩家: %N", player);
-
-    if (!IsClientInGame(player))
+    if (player <= 0 || player > MaxClients || !IsClientInGame(player))
     {
         PrintToServer("[ControlTank] 玩家不在游戏中，中止");
         return Plugin_Stop;
     }
 
+    char playerName[MAX_NAME_LENGTH];
+    GetClientName(player, playerName, sizeof(playerName));
+    PrintToServer("[ControlTank] Timer_EnsurePlayerDead 触发 - 玩家: %s", playerName);
+
     int team = GetClientTeam(player);
     bool alive = IsPlayerAlive(player);
     PrintToServer("[ControlTank] 玩家状态 - 队伍: %d, 存活: %d", team, alive);
 
-    // 如果玩家在幸存者队伍但还活着，杀死他
-    if (team == 2 && alive)
+    // 如果玩家不在幸存者队伍，先切换过去
+    if (team != 2)
     {
-        PrintToServer("[ControlTank] 执行 ForcePlayerSuicide");
+        PrintToServer("[ControlTank] 玩家不在幸存者队伍(当前:%d)，切换到队伍2", team);
+        ChangeClientTeam(player, 2);
+
+        // 再次检查并确保死亡
+        CreateTimer(0.1, Timer_EnsurePlayerDead_Final, userid, TIMER_FLAG_NO_MAPCHANGE);
+    }
+    else if (alive)
+    {
+        // 如果玩家在幸存者队伍但还活着，杀死他
+        PrintToServer("[ControlTank] 玩家在幸存者队伍且存活，执行 ForcePlayerSuicide");
         ForcePlayerSuicide(player);
         PrintToServer("[ControlTank] ForcePlayerSuicide 完成");
     }
     else
     {
-        PrintToServer("[ControlTank] 跳过 - 队伍: %d, 存活: %d", team, alive);
+        PrintToServer("[ControlTank] 玩家已在幸存者队伍且死亡，无需处理");
     }
 
     PrintToServer("[ControlTank] 处理完成");
+    return Plugin_Stop;
+}
+
+public Action Timer_EnsurePlayerDead_Final(Handle timer, int userid)
+{
+    int player = GetClientOfUserId(userid);
+
+    if (player <= 0 || player > MaxClients || !IsClientInGame(player))
+    {
+        PrintToServer("[ControlTank] Final: 玩家不在游戏中，中止");
+        return Plugin_Stop;
+    }
+
+    char playerName[MAX_NAME_LENGTH];
+    GetClientName(player, playerName, sizeof(playerName));
+    PrintToServer("[ControlTank] Timer_EnsurePlayerDead_Final 触发 - 玩家: %s", playerName);
+
+    int team = GetClientTeam(player);
+    bool alive = IsPlayerAlive(player);
+    PrintToServer("[ControlTank] Final状态 - 队伍: %d, 存活: %d", team, alive);
+
+    // 最终确认：确保玩家在幸存者队伍且是死亡状态
+    if (team != 2)
+    {
+        PrintToServer("[ControlTank] Final警告: 玩家仍不在幸存者队伍(队伍:%d)", team);
+    }
+    else if (alive)
+    {
+        PrintToServer("[ControlTank] Final: 玩家仍存活，执行 ForcePlayerSuicide");
+        ForcePlayerSuicide(player);
+    }
+    else
+    {
+        PrintToServer("[ControlTank] Final: 玩家状态正确(队伍2, 死亡)");
+    }
+
     return Plugin_Stop;
 }
 
