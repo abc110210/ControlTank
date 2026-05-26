@@ -22,6 +22,10 @@ bool g_bTankSpawning = false;
 bool g_bIsManualTest = false;
 int g_iCurrentTank = -1;
 
+// AFK检测相关
+float g_fLastActivityTime[MAXPLAYERS + 1];
+float g_fLastPosition[MAXPLAYERS + 1][3];
+
 public void OnPluginStart()
 {
     g_cvarEnabled = CreateConVar("shan_controltank_enabled", "1", "是否启用Tank随机选择功能", FCVAR_NOTIFY, true, 0.0, true, 1.0);
@@ -39,6 +43,73 @@ public void OnPluginStart()
 
     RegConsoleCmd("sm_test2", Command_Test2, "测试接管AI Tank");
     RegConsoleCmd("sm_tankinfo", Command_TankInfo, "显示Tank配置信息");
+
+    // 添加AFK检测定时器
+    CreateTimer(5.0, Timer_CheckPlayerActivity, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
+}
+
+public void OnClientPostAdminCheck(int client)
+{
+    if (IsClientInGame(client) && !IsFakeClient(client))
+    {
+        g_fLastActivityTime[client] = GetGameTime();
+        g_fLastPosition[client][0] = 0.0;
+        g_fLastPosition[client][1] = 0.0;
+        g_fLastPosition[client][2] = 0.0;
+    }
+}
+
+public void OnClientDisconnect(int client)
+{
+    g_fLastActivityTime[client] = 0.0;
+    g_fLastPosition[client][0] = 0.0;
+    g_fLastPosition[client][1] = 0.0;
+    g_fLastPosition[client][2] = 0.0;
+}
+
+public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2])
+{
+    if (client > 0 && client <= MaxClients && IsClientInGame(client) && !IsFakeClient(client))
+    {
+        // 检测玩家是否有按键或移动
+        if (buttons != 0 || vel[0] != 0.0 || vel[1] != 0.0 || vel[2] != 0.0)
+        {
+            g_fLastActivityTime[client] = GetGameTime();
+        }
+    }
+
+    return Plugin_Continue;
+}
+
+public Action Timer_CheckPlayerActivity(Handle timer)
+{
+    float currentTime = GetGameTime();
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i) && !IsFakeClient(i) && IsPlayerAlive(i) && GetClientTeam(i) == 2)
+        {
+            // 检查玩家位置变化
+            float pos[3];
+            GetClientAbsOrigin(i, pos);
+
+            // 如果位置变化超过10单位，更新活动时间
+            if (g_fLastPosition[i][0] != 0.0 || g_fLastPosition[i][1] != 0.0 || g_fLastPosition[i][2] != 0.0)
+            {
+                float distance = GetVectorDistance(g_fLastPosition[i], pos);
+                if (distance > 10.0)
+                {
+                    g_fLastActivityTime[i] = currentTime;
+                }
+            }
+
+            // 更新最后位置
+            g_fLastPosition[i][0] = pos[0];
+            g_fLastPosition[i][1] = pos[1];
+            g_fLastPosition[i][2] = pos[2];
+        }
+    }
+
+    return Plugin_Continue;
 }
 
 public void OnMapStart()
@@ -71,9 +142,37 @@ public void OnTankHPChanged(ConVar convar, const char[] oldValue, const char[] n
     }
 }
 
+// 监控Tank挫折度设置 - 确保挫折度系统正常工作
+public Action L4D_OnSetTankFrustration(int tank, int &frustration)
+{
+    if (tank > 0 && tank <= MaxClients && IsClientInGame(tank) && !IsFakeClient(tank))
+    {
+        int frustrationTime = g_cvarTankFrustrationTime.IntValue;
+
+        // 0 = 禁用挫折度系统（永久控制）
+        if (frustrationTime == 0)
+        {
+            frustration = 0;
+            return Plugin_Changed;
+        }
+        // 配置为1时，返回Plugin_Continue让游戏使用默认挫折度系统
+    }
+
+    return Plugin_Continue;
+}
+
 public void OnMapEnd()
 {
     g_iCurrentTank = -1;
+
+    // 清理所有玩家AFK数据
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        g_fLastActivityTime[i] = 0.0;
+        g_fLastPosition[i][0] = 0.0;
+        g_fLastPosition[i][1] = 0.0;
+        g_fLastPosition[i][2] = 0.0;
+    }
 }
 
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
@@ -307,6 +406,19 @@ bool HasPlayerControlledTank()
     return false;
 }
 
+// 判断玩家是否AFK（60秒无活动）
+bool IsPlayerAFK(int client)
+{
+    if (g_fLastActivityTime[client] == 0.0)
+    {
+        g_fLastActivityTime[client] = GetGameTime();
+        return false;
+    }
+
+    float inactiveTime = GetGameTime() - g_fLastActivityTime[client];
+    return inactiveTime > 60.0;  // 60秒无活动视为AFK
+}
+
 int SelectRandomSurvivor()
 {
     ArrayList survivors = new ArrayList();
@@ -315,7 +427,7 @@ int SelectRandomSurvivor()
     {
         if (IsClientInGame(i) && !IsFakeClient(i) && IsPlayerAlive(i))
         {
-            if (GetClientTeam(i) == 2)
+            if (GetClientTeam(i) == 2 && !IsPlayerAFK(i))
             {
                 survivors.Push(i);
             }
@@ -327,6 +439,26 @@ int SelectRandomSurvivor()
     {
         int randomIndex = GetRandomInt(0, survivors.Length - 1);
         selected = survivors.Get(randomIndex);
+    }
+    else
+    {
+        // 如果没有非AFK的玩家，从所有幸存者中选择（包括AFK）
+        for (int i = 1; i <= MaxClients; i++)
+        {
+            if (IsClientInGame(i) && !IsFakeClient(i) && IsPlayerAlive(i))
+            {
+                if (GetClientTeam(i) == 2)
+                {
+                    survivors.Push(i);
+                }
+            }
+        }
+
+        if (survivors.Length > 0)
+        {
+            int randomIndex = GetRandomInt(0, survivors.Length - 1);
+            selected = survivors.Get(randomIndex);
+        }
     }
 
     delete survivors;
@@ -646,8 +778,13 @@ void ApplyTankSettings(int client)
     {
         // 禁用挫折度系统（永久控制）
         SetEntProp(client, Prop_Send, "m_frustration", 0);
+        SetEntProp(client, Prop_Send, "m_frustrationRemaining", 0);
     }
-    // 配置为1时，不设置挫折度，让游戏使用默认系统
+    else
+    {
+        // 启用默认挫折度系统 - 确保系统正常工作
+        SetEntProp(client, Prop_Send, "m_frustration", 0);
+    }
 }
 
 bool IsCoopMode()
