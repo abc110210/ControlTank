@@ -26,6 +26,9 @@ float g_fLastTankSpawnTime = 0.0;
 // AFK检测
 float g_fLastActivityTime[MAXPLAYERS + 1];
 
+// 挫折度重置定时器
+Handle g_hFrustrationTimer = null;
+
 public void OnPluginStart()
 {
     g_cvarEnabled = CreateConVar("shan_controltank_enabled", "1", "是否启用Tank随机选择功能", FCVAR_NOTIFY, true, 0.0, true, 1.0);
@@ -43,6 +46,7 @@ public void OnPluginStart()
 
     RegConsoleCmd("sm_tanktest", Command_Test, "测试接管AI Tank");
     RegConsoleCmd("sm_tankinfo", Command_TankInfo, "显示Tank配置信息");
+    RegConsoleCmd("sm_debugfrustration", Command_DebugFrustration, "调试挫折度系统");
 
     CreateTimer(5.0, Timer_CheckAFK, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
 }
@@ -83,6 +87,14 @@ public void OnMapStart()
 {
     g_bTankSpawning = false;
     g_fLastTankSpawnTime = 0.0;
+
+    // 清理挫折度定时器
+    if (g_hFrustrationTimer != null)
+    {
+        KillTimer(g_hFrustrationTimer);
+        g_hFrustrationTimer = null;
+    }
+
     ApplyServerSettings();
 }
 
@@ -155,6 +167,13 @@ public void Event_PlayerBotReplace(Event event, const char[] name, bool dontBroa
             int zClass = GetEntProp(player, Prop_Send, "m_zombieClass");
             if (zClass == 8)
             {
+                // 停止挫折度定时器
+                if (g_hFrustrationTimer != null)
+                {
+                    KillTimer(g_hFrustrationTimer);
+                    g_hFrustrationTimer = null;
+                }
+
                 // 先更新时间戳，防止触发新的tank_spawn
                 g_fLastTankSpawnTime = GetGameTime();
 
@@ -180,6 +199,13 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
             int zClass = GetEntProp(client, Prop_Send, "m_zombieClass");
             if (zClass == 8)
             {
+                // 停止挫折度定时器
+                if (g_hFrustrationTimer != null)
+                {
+                    KillTimer(g_hFrustrationTimer);
+                    g_hFrustrationTimer = null;
+                }
+
                 // 玩家控制的Tank死亡，切换到幸存者阵营
                 CreateTimer(0.1, Timer_JoinSurvivorTeam, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
             }
@@ -217,6 +243,13 @@ public Action Timer_HandlePlayerLostControl(Handle timer, DataPack data)
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
     g_bTankSpawning = false;
+
+    // 清理挫折度定时器
+    if (g_hFrustrationTimer != null)
+    {
+        KillTimer(g_hFrustrationTimer);
+        g_hFrustrationTimer = null;
+    }
 }
 
 public void Event_TankSpawn(Event event, const char[] name, bool dontBroadcast)
@@ -430,6 +463,13 @@ void ApplyTankSettings(int client)
         }
     }
 
+    // 停止旧的挫折度定时器
+    if (g_hFrustrationTimer != null)
+    {
+        KillTimer(g_hFrustrationTimer);
+        g_hFrustrationTimer = null;
+    }
+
     if (g_cvarFrustrationEnabled.BoolValue)
     {
         SetEntProp(client, Prop_Send, "m_frustration", 0);
@@ -439,7 +479,47 @@ void ApplyTankSettings(int client)
     {
         SetEntProp(client, Prop_Send, "m_frustration", 0);
         SetEntProp(client, Prop_Send, "m_frustrationRemaining", 0);
+
+        // 启动定时器持续重置挫折度，确保永远不会增加
+        g_hFrustrationTimer = CreateTimer(1.0, Timer_ResetFrustration, GetClientUserId(client), TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
     }
+}
+
+public Action Timer_ResetFrustration(Handle timer, int userid)
+{
+    int client = GetClientOfUserId(userid);
+    if (client <= 0 || client > MaxClients || !IsClientInGame(client))
+    {
+        g_hFrustrationTimer = null;
+        return Plugin_Stop;
+    }
+
+    // 如果配置不再是0，停止定时器
+    if (g_cvarFrustrationEnabled.BoolValue)
+    {
+        g_hFrustrationTimer = null;
+        return Plugin_Stop;
+    }
+
+    // 检查玩家是否还在控制Tank
+    if (GetClientTeam(client) != 3)
+    {
+        g_hFrustrationTimer = null;
+        return Plugin_Stop;
+    }
+
+    int zClass = GetEntProp(client, Prop_Send, "m_zombieClass");
+    if (zClass != 8)
+    {
+        g_hFrustrationTimer = null;
+        return Plugin_Stop;
+    }
+
+    // 强制重置挫折度为0
+    SetEntProp(client, Prop_Send, "m_frustration", 0);
+    SetEntProp(client, Prop_Send, "m_frustrationRemaining", 0);
+
+    return Plugin_Continue;
 }
 
 bool IsCoopMode()
@@ -552,6 +632,37 @@ public Action Timer_TestTakeoverPhase2(Handle timer, DataPack data)
 
     g_bIsManualTest = false;
     return Plugin_Stop;
+}
+
+public Action Command_DebugFrustration(int client, int args)
+{
+    if (client == 0)
+    {
+        ReplyToCommand(client, "[寄寄之家-ControlTank] 此命令只能由玩家使用");
+        return Plugin_Handled;
+    }
+
+    ReplyToCommand(client, "========== [挫折度调试信息] ==========");
+    ReplyToCommand(client, "配置变量值: %d", g_cvarFrustrationEnabled.IntValue);
+    ReplyToCommand(client, "配置启用: %s", g_cvarFrustrationEnabled.BoolValue ? "是" : "否");
+
+    int currentTank = FindCurrentTank();
+    if (currentTank > 0 && IsClientInGame(currentTank))
+    {
+        ReplyToCommand(client, "当前Tank: %N", currentTank);
+        int frustration = GetEntProp(currentTank, Prop_Send, "m_frustration");
+        int frustrationRemaining = GetEntProp(currentTank, Prop_Send, "m_frustrationRemaining");
+        ReplyToCommand(client, "当前挫折度: %d", frustration);
+        ReplyToCommand(client, "剩余挫折度: %d", frustrationRemaining);
+    }
+    else
+    {
+        ReplyToCommand(client, "当前Tank: 无（你不是Tank）");
+    }
+
+    ReplyToCommand(client, "====================================");
+
+    return Plugin_Handled;
 }
 
 public Action Command_TankInfo(int client, int args)
