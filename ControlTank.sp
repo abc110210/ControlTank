@@ -22,6 +22,7 @@ ConVar g_cvarFrustrationEnabled;
 bool g_bTankSpawning = false;
 bool g_bIsManualTest = false;
 float g_fLastTankSpawnTime = 0.0;
+bool g_bPlayerLostControl = false;
 
 // AFK检测
 float g_fLastActivityTime[MAXPLAYERS + 1];
@@ -96,6 +97,7 @@ public void OnMapStart()
 {
     g_bTankSpawning = false;
     g_fLastTankSpawnTime = 0.0;
+    g_bPlayerLostControl = false;
     ApplyServerSettings();
 }
 
@@ -158,64 +160,39 @@ void UpdateTankFrustration()
 public void Event_PlayerBotReplace(Event event, const char[] name, bool dontBroadcast)
 {
     int player = GetClientOfUserId(event.GetInt("player"));
+    int bot = GetClientOfUserId(event.GetInt("bot"));
 
     if (FindCurrentTank() == player && player > 0 && IsClientInGame(player))
     {
-        CreateTimer(0.1, Timer_RespawnPlayer, GetClientUserId(player), TIMER_FLAG_NO_MAPCHANGE);
-    }
-}
-
-public Action Timer_RespawnPlayer(Handle timer, int userid)
-{
-    int player = GetClientOfUserId(userid);
-    if (player <= 0 || player > MaxClients || !IsClientInGame(player))
-        return Plugin_Stop;
-
-    // 切换到幸存者阵营
-    ChangeClientTeam(player, 2);
-
-    // 寻找一个幸存者来重生
-    int target = FindRandomSurvivorForRespawn();
-    if (target > 0)
-    {
-        L4D_RespawnPlayer(player, target);
-        PrintToChat(player, "\x03[寄寄之家-ControlTank] \x01你已失去Tank控制权，在队友附近重生");
-    }
-
-    return Plugin_Stop;
-}
-
-int FindRandomSurvivorForRespawn()
-{
-    ArrayList survivors = new ArrayList();
-
-    for (int i = 1; i <= MaxClients; i++)
-    {
-        if (IsClientInGame(i) && IsPlayerAlive(i) && GetClientTeam(i) == 2)
+        // 检查bot是否还活着
+        if (bot > 0 && bot <= MaxClients && IsClientInGame(bot) && IsPlayerAlive(bot))
         {
-            survivors.Push(i);
+            // 玩家失去控制权，设置标志跳过下一次tank_spawn
+            g_bPlayerLostControl = true;
         }
-    }
 
-    int selected = -1;
-    if (survivors.Length > 0)
-    {
-        selected = survivors.Get(GetRandomInt(0, survivors.Length - 1));
+        // 只切换阵营，其他交给系统处理
+        ChangeClientTeam(player, 2);
     }
-
-    delete survivors;
-    return selected;
 }
 
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
     g_bTankSpawning = false;
+    g_bPlayerLostControl = false;
 }
 
 public void Event_TankSpawn(Event event, const char[] name, bool dontBroadcast)
 {
     if (!g_cvarEnabled.BoolValue || !IsCoopMode() || g_bIsManualTest || g_bTankSpawning)
         return;
+
+    // 如果玩家刚失去控制权，跳过这次tank_spawn事件（防止循环）
+    if (g_bPlayerLostControl)
+    {
+        g_bPlayerLostControl = false; // 重置标志，下次tank_spawn正常处理
+        return;
+    }
 
     // 防止重复生成Tank：10秒内只处理一次tank_spawn事件
     float currentTime = GetGameTime();
@@ -411,6 +388,7 @@ public Action Timer_TakeoverPhase2(Handle timer, DataPack data)
     L4D_TakeOverZombieBot(client, tankBot);
     delete data;
 
+    g_bPlayerLostControl = false; // 玩家成功接管Tank，重置标志
     ApplyTankSettings(client);
     return Plugin_Stop;
 }
@@ -555,6 +533,7 @@ public Action Timer_TestTakeoverPhase2(Handle timer, DataPack data)
     L4D_TakeOverZombieBot(client, tankBot);
     delete data;
 
+    g_bPlayerLostControl = false; // 玩家成功接管Tank，重置标志
     ApplyTankSettings(client);
     ReplyToCommand(client, "[寄寄之家-ControlTank] ✓ 已转换为 Tank");
 
