@@ -21,6 +21,7 @@ ConVar g_cvarFrustrationEnabled;
 
 bool g_bTankSpawning = false;
 bool g_bIsManualTest = false;
+bool g_bIsTransitioning = false;
 
 // AFK检测
 float g_fLastActivityTime[MAXPLAYERS + 1];
@@ -95,6 +96,7 @@ public Action Timer_CheckAFK(Handle timer)
 public void OnMapStart()
 {
     g_bTankSpawning = false;
+    g_bIsTransitioning = false;
     ApplyServerSettings();
 }
 
@@ -169,6 +171,7 @@ public void Event_PlayerBotReplace(Event event, const char[] name, bool dontBroa
 
     if (FindCurrentTank() == player && player > 0 && IsClientInGame(player))
     {
+        g_bIsTransitioning = true;
         ChangeClientTeam(player, 2);
         CreateTimer(0.1, Timer_EnsureDead, GetClientUserId(player), TIMER_FLAG_NO_MAPCHANGE);
     }
@@ -184,17 +187,19 @@ public Action Timer_EnsureDead(Handle timer, int userid)
             ForcePlayerSuicide(player);
         }
     }
+    g_bIsTransitioning = false;
     return Plugin_Stop;
 }
 
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
     g_bTankSpawning = false;
+    g_bIsTransitioning = false;
 }
 
 public void Event_TankSpawn(Event event, const char[] name, bool dontBroadcast)
 {
-    if (!g_cvarEnabled.BoolValue || !IsCoopMode() || g_bIsManualTest || g_bTankSpawning)
+    if (!g_cvarEnabled.BoolValue || !IsCoopMode() || g_bIsManualTest || g_bTankSpawning || g_bIsTransitioning)
         return;
 
     g_bTankSpawning = true;
