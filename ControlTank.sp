@@ -21,7 +21,7 @@ ConVar g_cvarFrustrationEnabled;
 
 bool g_bTankSpawning = false;
 bool g_bIsManualTest = false;
-bool g_bIsTransitioning = false;
+float g_fLastTankSpawnTime = 0.0;
 
 // AFK检测
 float g_fLastActivityTime[MAXPLAYERS + 1];
@@ -37,9 +37,7 @@ public void OnPluginStart()
     HookConVarChange(g_cvarFrustrationEnabled, OnConVarChanged);
 
     HookEvent("tank_spawn", Event_TankSpawn);
-    HookEvent("player_death", Event_PlayerDeath);
     HookEvent("round_end", Event_RoundEnd);
-    HookEvent("player_bot_replace", Event_PlayerBotReplace);
 
     RegConsoleCmd("sm_test2", Command_Test, "测试接管AI Tank");
     RegConsoleCmd("sm_tankinfo", Command_TankInfo, "显示Tank配置信息");
@@ -96,7 +94,7 @@ public Action Timer_CheckAFK(Handle timer)
 public void OnMapStart()
 {
     g_bTankSpawning = false;
-    g_bIsTransitioning = false;
+    g_fLastTankSpawnTime = 0.0;
     ApplyServerSettings();
 }
 
@@ -156,52 +154,22 @@ void UpdateTankFrustration()
     }
 }
 
-public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast)
-{
-    int client = GetClientOfUserId(event.GetInt("userid"));
-    if (FindCurrentTank() == client)
-    {
-        UpdateTankFrustration();
-    }
-}
-
-public void Event_PlayerBotReplace(Event event, const char[] name, bool dontBroadcast)
-{
-    int player = GetClientOfUserId(event.GetInt("player"));
-
-    if (FindCurrentTank() == player && player > 0 && IsClientInGame(player))
-    {
-        g_bIsTransitioning = true;
-        ChangeClientTeam(player, 2);
-        CreateTimer(0.1, Timer_EnsureDead, GetClientUserId(player), TIMER_FLAG_NO_MAPCHANGE);
-    }
-}
-
-public Action Timer_EnsureDead(Handle timer, int userid)
-{
-    int player = GetClientOfUserId(userid);
-    if (player > 0 && player <= MaxClients && IsClientInGame(player))
-    {
-        if (GetClientTeam(player) == 2 && IsPlayerAlive(player))
-        {
-            ForcePlayerSuicide(player);
-        }
-    }
-    g_bIsTransitioning = false;
-    return Plugin_Stop;
-}
-
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
     g_bTankSpawning = false;
-    g_bIsTransitioning = false;
 }
 
 public void Event_TankSpawn(Event event, const char[] name, bool dontBroadcast)
 {
-    if (!g_cvarEnabled.BoolValue || !IsCoopMode() || g_bIsManualTest || g_bTankSpawning || g_bIsTransitioning)
+    if (!g_cvarEnabled.BoolValue || !IsCoopMode() || g_bIsManualTest || g_bTankSpawning)
         return;
 
+    // 防止重复生成Tank：10秒内只处理一次tank_spawn事件
+    float currentTime = GetGameTime();
+    if (currentTime - g_fLastTankSpawnTime < 10.0)
+        return;
+
+    g_fLastTankSpawnTime = currentTime;
     g_bTankSpawning = true;
     CreateTimer(0.5, Timer_SelectTank, _, TIMER_FLAG_NO_MAPCHANGE);
 }
