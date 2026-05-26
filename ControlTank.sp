@@ -74,19 +74,20 @@ public void OnTankHPChanged(ConVar convar, const char[] oldValue, const char[] n
 // 监控Tank挫折度设置
 public Action L4D_OnSetTankFrustration(int tank, int &frustration)
 {
-    if (tank > 0 && tank <= MaxClients && IsClientInGame(tank))
+    if (tank > 0 && tank <= MaxClients && IsClientInGame(tank) && !IsFakeClient(tank))
     {
-        if (!IsFakeClient(tank))
-        {
-            int frustrationTime = g_cvarTankFrustrationTime.IntValue;
+        int frustrationTime = g_cvarTankFrustrationTime.IntValue;
 
-            if (frustrationTime == 0)
-            {
-                frustration = 0;
-            }
+        // 0 = 禁用挫折度系统（永久控制）
+        // 1 = 启用默认挫折度系统
+        if (frustrationTime == 0)
+        {
+            frustration = 0;
+            return Plugin_Changed;  // 告诉引擎我们修改了值
         }
     }
-    return Plugin_Continue;
+
+    return Plugin_Continue;  // 使用默认行为
 }
 
 public void OnMapEnd()
@@ -658,8 +659,14 @@ void ApplyTankSettings(int client)
         }
     }
 
-    // 设置初始挫折度为0
-    SetEntProp(client, Prop_Send, "m_frustration", 0);
+    // 根据配置设置挫折度
+    int frustrationTime = g_cvarTankFrustrationTime.IntValue;
+    if (frustrationTime == 0)
+    {
+        // 禁用挫折度系统（永久控制）
+        SetEntProp(client, Prop_Send, "m_frustration", 0);
+    }
+    // 如果配置为1，不设置挫折度，让游戏使用默认系统
 }
 
 bool IsCoopMode()
