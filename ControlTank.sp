@@ -77,23 +77,16 @@ public Action L4D_OnSetTankFrustration(int tank, int &frustration)
     if (tank > 0 && tank <= MaxClients && IsClientInGame(tank) && !IsFakeClient(tank))
     {
         int frustrationTime = g_cvarTankFrustrationTime.IntValue;
-        PrintToServer("[ControlTank] L4D_OnSetTankFrustration - Tank: %N, 配置: %d, 设置值: %d", tank, frustrationTime, frustration);
 
         // 0 = 禁用挫折度系统（永久控制）
-        // 1 = 启用默认挫折度系统
         if (frustrationTime == 0)
         {
             frustration = 0;
-            PrintToServer("[ControlTank] 配置为0，强制挫折度=0，返回Plugin_Changed");
-            return Plugin_Changed;  // 告诉引擎我们修改了值
-        }
-        else
-        {
-            PrintToServer("[ControlTank] 配置为1，返回Plugin_Continue使用默认值");
+            return Plugin_Handled;  // 完全阻止挫折度设置
         }
     }
 
-    return Plugin_Continue;  // 使用默认行为
+    return Plugin_Continue;
 }
 
 public void OnMapEnd()
